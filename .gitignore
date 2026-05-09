@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Runtime handoff artifacts
+.hermes/handoffs/
+
+# Local environment
+.env
+.env.*
+!.env.example
