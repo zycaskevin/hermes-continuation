@@ -160,6 +160,27 @@ Still out of scope for Phase 3A:
 - Cloud sync, dashboard, or background daemon monitoring.
 - Expanding packet schema beyond what doctor needs to recommend next action.
 
+## Phase 3B / 3C Execution Plan
+
+Planning completed:
+
+- Canonical execution plan: `docs/PHASE_3B_3C_EXECUTION_PLAN.md`.
+- Phase 3B target: add `hermes-handoff prepare` as a read-only prepare-only preview flow.
+- Phase 3C target: expose advisory/prepare behavior through the Hermes plugin wrapper without Hermes core changes.
+- Dependency order: prepare helper → CLI prepare command → plugin prepare tool → optional `/handoff doctor/prepare` command surface → docs/gates/scoped commit.
+- Required boundary: `doctor` recommends, `prepare` previews, `create` writes; no hidden packet writes, no auto-restart, no transcript parsing, no agent launch.
+- Implementation should use `subagent-driven-development` and verify actual file changes/tests rather than trusting subagent summaries.
+
+Phase 3B/3C acceptance gates:
+
+- `hermes-handoff prepare` exists and emits human + JSON preview output.
+- Prepare never creates `.hermes/handoffs/` packet files.
+- Missing goal/next task degrades to `advise`; safety blockers return `block` without printing secrets.
+- Plugin registers existing create/resume tools unchanged and adds prepare advisory surface compatibly.
+- Public docs explain `doctor` vs `prepare` vs `create` and preserve negative MVP boundaries.
+- Full pytest, public docs tests, runtime plugin smoke, secret scan, `git diff --check`, and Graphify rebuild are run before commit.
+- Commit is scoped and excludes `graphify-out/`, `.hermes/handoffs/`, caches, generated artifacts, and local root drafts.
+
 ## Phase 3 Automatic Handoff Trigger Policy Design Plan
 
 Design now (documentation first, no runtime implementation in this phase):
