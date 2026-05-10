@@ -13,6 +13,7 @@ The current MVP is intentionally narrow: it writes a local Markdown + JSON hando
 Additional reference docs:
 
 - [Hermes plugin wrapper contract](docs/PLUGIN_WRAPPER.md)
+- [Automatic handoff trigger policy](docs/AUTOMATIC_HANDOFF_TRIGGER_POLICY.md)
 - [Resume command behavior](docs/RESUME_COMMAND.md)
 - [Handoff packet schema](docs/HANDOFF_SCHEMA.md)
 - [Examples](docs/EXAMPLES.md)
