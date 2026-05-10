@@ -17,16 +17,34 @@ Long agent tasks can become brittle when context grows, gets compressed, or need
 - safety/redaction status
 - a copy-paste resume prompt
 
-## Install for local development
+## Install
+
+For local CLI development, install into your active Python environment:
 
 ```bash
 python -m pip install -e .
 ```
 
-## Usage
+For Hermes runtime/plugin use, install the package into the same interpreter that runs Hermes. On this local Hermes checkout that is:
 
 ```bash
-hermes-handoff create   --repo .   --goal "Fix dashboard health page"   --completed "Updated health copy"   --verified "pytest -q passed"   --not-run "browser QA"   --do-not-touch "billing code"   --next "Run build and browser QA"
+cd /home/zycas/hermes-continuation
+/home/zycas/.hermes/hermes-agent/venv/bin/python3 -m pip install -e .
+```
+
+The package exposes the `hermes-continuation = hermes_continuation.plugin` entry point in the `hermes_agent.plugins` group.
+
+## CLI usage
+
+```bash
+hermes-handoff create \
+  --repo . \
+  --goal "Fix dashboard health page" \
+  --completed "Updated health copy" \
+  --verified "pytest -q passed" \
+  --not-run "browser QA" \
+  --do-not-touch "billing code" \
+  --next "Run build and browser QA"
 ```
 
 Equivalent module form:
@@ -42,7 +60,7 @@ Output:
 .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-## Resume from a handoff
+Resume from a handoff:
 
 ```bash
 hermes-handoff resume .hermes/handoffs/<timestamp>-handoff.json
@@ -52,7 +70,18 @@ By default, `resume` prints only the clean resume prompt so it can be pasted int
 
 ## Hermes plugin wrapper
 
-The package also exposes a thin Hermes plugin wrapper through the `hermes_agent.plugins` entry point. After editable install, Hermes can discover `hermes-continuation` as a plugin and register two tools:
+The package also exposes a thin Hermes plugin wrapper through the `hermes_agent.plugins` entry point. Hermes entry-point plugins are opt-in. Enable this plugin in Hermes config:
+
+```yaml
+plugins:
+  enabled:
+    - hermes-continuation
+  disabled: []
+```
+
+Alternatively, use Hermes' normal plugin-management flow to enable `hermes-continuation`, then restart the Hermes CLI/gateway so plugin discovery refreshes.
+
+When loaded, the plugin registers two tools:
 
 - `hermes_handoff_create` — create a Markdown + JSON handoff packet.
 - `hermes_handoff_resume` — extract the resume prompt from a handoff JSON.
@@ -60,13 +89,29 @@ The package also exposes a thin Hermes plugin wrapper through the `hermes_agent.
 On Hermes builds that expose plugin slash commands, the same wrapper also registers `/handoff` without modifying Hermes core:
 
 ```text
+/handoff help
 /handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
+/handoff create repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA"
+/handoff {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-`/handoff <json-or-key-value-args>` is treated as an implicit create shortcut. Use `/handoff help` in-session for the supported MVP forms.
+`/handoff <json-or-key-value-args>` is treated as an implicit create shortcut. Bare `/handoff` or `/handoff help` shows the supported MVP forms instead of creating an underspecified packet.
 
-See `docs/PLUGIN_WRAPPER.md` for the plugin contract, safety boundaries, and verification gates.
+### Verify Hermes discovery/load
+
+After installing into Hermes' interpreter and enabling the plugin, verify from the Hermes runtime:
+
+```bash
+cd /home/zycas/hermes-continuation
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
+
+The smoke test uses `/home/zycas/.hermes/hermes-agent/venv/bin/python3`, an isolated temporary `HERMES_HOME`, and `/handoff help` only. It does not modify `~/.hermes/config.yaml` and does not create handoff packets.
+
+For a manual runtime probe, inspect Hermes plugin state with the normal Hermes plugin commands or confirm that `/handoff help` is available in a restarted Hermes session.
+
+See `docs/PLUGIN_WRAPPER.md` for the plugin contract, safety boundaries, runtime smoke gate, and troubleshooting.
 
 ## MVP boundaries
 

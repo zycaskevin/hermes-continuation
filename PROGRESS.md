@@ -209,3 +209,39 @@ Command UX verification on 2026-05-10:
 - OpenCode/delegate outputs must be verified by checking actual files and test results; self-report is not evidence.
 - Do not commit generated smoke handoff artifacts unless intentionally documenting examples.
 - This sidecar is still manual: the plugin wrapper exposes tools, but it does not add a Hermes core `/handoff` command or automatic context-risk detection yet.
+## Runtime Smoke + Install Docs Plan
+
+Implement now:
+
+- A: Add a real Hermes runtime smoke gate that verifies the installed package is discoverable through the `hermes_agent.plugins` entry point and that the plugin `register(ctx)` path registers the expected handoff tools/command using Hermes' real `PluginContext` shape.
+- B: Strengthen install/use docs with exact editable install, plugin discovery verification, `/handoff` command examples, runtime smoke command, and troubleshooting.
+
+Acceptance gates:
+
+- Runtime smoke test passes without modifying Hermes core.
+- Full pytest passes.
+- Secret scan reports 0 findings.
+- `git diff --check` passes.
+- Graphify rebuild hook is executed after code/doc changes.
+- Commit is scoped and excludes generated runtime artifacts such as `graphify-out/`.
+
+Still out of scope:
+
+- Hermes core changes.
+- Automatic session restart.
+- Cloud sync/dashboard.
+- Committing generated handoff packets or graph output.
+
+Runtime smoke/doc implementation on 2026-05-10:
+
+- Added `tests/test_hermes_runtime_plugin_smoke.py`, a portable pytest that skips when the local Hermes source/venv is absent.
+- The smoke runs `/home/zycas/.hermes/hermes-agent/venv/bin/python3` in a subprocess with temporary `HERMES_HOME`, an isolated `HOME`, and `PYTHONPATH` containing this repo's `src/` plus `/home/zycas/.hermes/hermes-agent`.
+- The smoke verifies `hermes_agent.plugins` entry-point metadata, Hermes runtime plugin discovery/loading, real registry entries for `hermes_handoff_create` and `hermes_handoff_resume`, and `/handoff help` through Hermes' plugin command APIs without creating handoff packets or modifying `~/.hermes/config.yaml`.
+- Strengthened `README.md` install/usage docs for Hermes runtime editable install, opt-in plugin config, `/handoff` forms, and the runtime smoke command.
+- Strengthened `docs/PLUGIN_WRAPPER.md` with the exact runtime smoke gate, temporary `HERMES_HOME` isolation, and troubleshooting for plugin listing/enabling, `/handoff` availability, entry-point visibility, generated artifacts, and restart/reset behavior.
+
+Runtime smoke verification on 2026-05-10:
+
+- `python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py` passed: 1 test.
+- `git diff --check` passed.
+- Full pytest, secret scan, and graphify rebuild were not run in this pass.
