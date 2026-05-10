@@ -40,3 +40,27 @@ def test_validate_packet_fails_missing_field():
         assert "missing required fields" in str(exc)
     else:
         raise AssertionError("expected ValidationError")
+
+
+def test_validate_packet_fails_missing_nested_required_field():
+    packet = build_packet(current_goal="Ship MVP", repo=repo_state(), next_recommended_task="Run tests")
+    packet["repo"].pop("changed_files")
+
+    try:
+        validate_packet(packet)
+    except ValidationError as exc:
+        assert "repo missing required fields" in str(exc)
+        assert "changed_files" in str(exc)
+    else:
+        raise AssertionError("expected ValidationError")
+
+
+def test_validate_packet_stays_structural_not_collector_policy():
+    packet = build_packet(current_goal="Ship MVP", repo=repo_state(), next_recommended_task="Run tests")
+    packet["repo"]["changed_files"] = [{"path": "graphify-out/report.json", "status": "??"}]
+    packet["task_state"]["completed_work"] = []
+    packet["task_state"]["in_progress"] = ""
+    packet["task_state"]["known_blockers"] = []
+    packet["task_state"]["do_not_touch"] = []
+
+    validate_packet(packet)

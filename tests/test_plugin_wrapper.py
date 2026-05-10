@@ -164,6 +164,52 @@ def test_plugin_create_auto_task_state_merges_manual_values(tmp_path):
     assert task_state["next_recommended_task"] == "Manual plugin next"
 
 
+def test_plugin_create_string_false_keeps_auto_task_state_opt_in(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+    (repo / "PROGRESS.md").write_text("## Completed Work\n- Should stay uncollected\n", encoding="utf-8")
+    output_dir = tmp_path / "handoffs"
+
+    create_result = json.loads(
+        plugin.hermes_handoff_create(
+            {
+                "repo_path": str(repo),
+                "goal": "Do not auto collect",
+                "next_task": "Inspect packet",
+                "auto_task_state": "false",
+                "output_dir": str(output_dir),
+            }
+        )
+    )
+
+    assert create_result["success"] is True
+    packet = json.loads(Path(create_result["json_path"]).read_text(encoding="utf-8"))
+    assert packet["task_state"]["completed_work"] == []
+
+
+def test_plugin_create_invalid_boolean_fails_without_writing(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    output_dir = tmp_path / "handoffs"
+
+    create_result = json.loads(
+        plugin.hermes_handoff_create(
+            {
+                "repo_path": str(repo),
+                "goal": "Invalid bool",
+                "next_task": "Report error",
+                "auto_task_state": "definitely",
+                "output_dir": str(output_dir),
+            }
+        )
+    )
+
+    assert create_result["success"] is False
+    assert "invalid boolean value" in create_result["error"]
+    assert not output_dir.exists()
+
+
 def test_handoff_command_create_and_resume_roundtrip(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -187,6 +233,10 @@ def test_handoff_command_create_and_resume_roundtrip(tmp_path):
     assert "You are taking over" in resume_output
     assert "Ship command UX" in resume_output
 
+    markdown_resume_output = plugin.hermes_handoff_command(f"resume {handoff_files[0]} --markdown")
+    assert markdown_resume_output.startswith("## Resume Prompt\n\n")
+    assert "Ship command UX" in markdown_resume_output
+
 
 def test_handoff_command_implicit_create_key_value_args(tmp_path):
     repo = tmp_path / "repo"
@@ -207,9 +257,16 @@ def test_handoff_command_help_and_parse_errors():
     assert "/handoff create" in help_output
     assert "Bare /handoff shows this help" in help_output
 
+    explicit_help_output = plugin.hermes_handoff_command("help")
+    assert explicit_help_output == help_output
+
     error_output = plugin.hermes_handoff_command("create goal-only")
     assert "Handoff command error" in error_output
     assert "expected key=value" in error_output
+
+    bool_error_output = plugin.hermes_handoff_command('create repo_path=. goal="Bool UX" next_task="Stop" auto_task_state=maybe')
+    assert "Handoff command error" in bool_error_output
+    assert "invalid boolean value" in bool_error_output
 
     unknown_output = plugin.hermes_handoff_command("frobnicate")
     assert "Unknown handoff subcommand: frobnicate" in unknown_output

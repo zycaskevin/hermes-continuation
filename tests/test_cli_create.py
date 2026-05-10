@@ -28,6 +28,24 @@ def test_help_smoke(tmp_path):
     assert "hermes-handoff" in result.stdout
 
 
+def test_create_help_documents_required_and_opt_in_flags(tmp_path):
+    result = run_cli(["create", "--help"], tmp_path)
+
+    assert result.returncode == 0
+    assert "--goal" in result.stdout
+    assert "--next" in result.stdout
+    assert "--auto-task-state" in result.stdout
+    assert "--completed" in result.stdout
+
+
+def test_create_requires_goal_and_next_before_writing(tmp_path):
+    result = run_cli(["create", "--repo", str(tmp_path), "--goal", "Missing next"], tmp_path)
+
+    assert result.returncode == 2
+    assert "--next" in result.stderr
+    assert not (tmp_path / ".hermes" / "handoffs").exists()
+
+
 def test_create_writes_markdown_and_json(tmp_path):
     result = run_cli(["create", "--repo", str(tmp_path), "--goal", "Smoke test", "--next", "Inspect output"], tmp_path)
     assert result.returncode == 0, result.stderr

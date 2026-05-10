@@ -62,7 +62,10 @@ def test_collect_task_state_filters_generated_changed_file_hints(tmp_path):
             {"status": "??", "path": ".hermes/handoffs/packet.json"},
             {"status": "??", "path": "_knowledge_base/session.md"},
             {"status": "??", "path": ".pytest_cache/v/cache/nodeids"},
+            {"status": "??", "path": "__pycache__/module.pyc"},
             {"status": "??", "path": "pkg.egg-info/PKG-INFO"},
+            {"status": "M", "path": "../outside.py"},
+            {"status": "M", "path": "/tmp/outside.py"},
             {"status": "M", "path": "src/hermes_continuation/task_state.py"},
         ]
     }
@@ -75,7 +78,21 @@ def test_collect_task_state_filters_generated_changed_file_hints(tmp_path):
     assert ".hermes" not in joined
     assert "_knowledge_base" not in joined
     assert ".pytest_cache" not in joined
+    assert "__pycache__" not in joined
     assert "egg-info" not in joined
+    assert "outside.py" not in joined
+
+
+def test_collect_task_state_degrades_for_missing_repo(tmp_path):
+    state = collect_task_state(tmp_path / "missing")
+
+    assert state == {
+        "completed_work": [],
+        "in_progress": [],
+        "known_blockers": [],
+        "do_not_touch": [],
+        "next_recommended_task": "",
+    }
 
 
 def test_collect_task_state_ignores_stale_broad_progress_headings(tmp_path):

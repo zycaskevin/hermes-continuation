@@ -2,11 +2,41 @@
 
 ## Current Goal
 
-Extend the completed Hermes continuation sidecar/plugin MVP with **B: automatic task-state collection**:
+Complete the public GitHub readiness pass for the Hermes continuation sidecar/plugin MVP:
 
-1. Lock the automatic task-state collection direction in this progress file before code.
-2. Add a repo-local, secret-safe collector that can infer useful handoff `task_state` fields from project files and git state while preserving existing manual CLI/plugin overrides.
-3. Keep the implementation as a sidecar/plugin-wrapper capability; do not modify Hermes core.
+1. Strengthen the test suite so CLI, plugin wrapper, packet validation, redaction, rendering, git-state collection, automatic task-state collection, and Hermes runtime smoke behavior are covered by explicit regression tests.
+2. Update the GitHub-facing usage documentation in **Traditional Chinese, Simplified Chinese, and English** so users can install, enable, run, verify, troubleshoot, and safely operate the sidecar/plugin without reading prior chat history.
+3. Keep the implementation as a sidecar/plugin-wrapper capability; do not modify Hermes core, do not commit generated runtime artifacts, and keep all handoff documentation secret-safe.
+
+## Public GitHub Readiness Plan
+
+Implement now:
+
+- Expand regression coverage for the existing sidecar/plugin behavior without changing the core product contract.
+- Add GitHub-facing usage documentation in three languages:
+  - Traditional Chinese: `docs/USAGE.zh-TW.md`
+  - Simplified Chinese: `docs/USAGE.zh-CN.md`
+  - English: `docs/USAGE.md`
+- Keep `README.md` as the public landing page and link clearly to all three usage guides.
+- Document installation, CLI create/resume, `--auto-task-state`, plugin enablement, `/handoff` command usage, packet output locations, verification commands, troubleshooting, and safety boundaries.
+- Keep all examples secret-safe. Any API key, token, password, credential, connection string, chat id, or message id must be omitted or shown as `[REDACTED]`.
+
+Acceptance gates before commit:
+
+- Full test suite passes with `python -m pytest -q`.
+- Hermes runtime plugin smoke test passes or is cleanly skipped by its existing environment guard.
+- CLI smoke covers help, create with `--auto-task-state`, and resume.
+- Source secret scan reports 0 findings in committable source/docs/tests/config files.
+- `git diff --check` passes.
+- Graphify maintenance hook is executed after code/doc changes.
+- Commit is scoped and excludes `_knowledge_base/`, `graphify-out/`, `.hermes/handoffs/`, cache directories, and package build artifacts.
+
+Still out of scope:
+
+- Hermes core modifications.
+- Automatic session restart.
+- Full Hermes transcript parsing or context-risk detection.
+- Committing generated handoff packets or Graphify output.
 
 ## Source of Truth
 

@@ -1,89 +1,91 @@
 # Hermes Continuation
 
-`hermes-continuation` is a small Hermes-native sidecar that creates structured handoff packets for long-running agent work.
+`hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work.
 
-The first MVP does **one thing only**: generate a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing work.
+The current MVP is intentionally narrow: it writes a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, or provide a dashboard.
 
-## Why
+## Usage guides
 
-Long agent tasks can become brittle when context grows, gets compressed, or needs to move to a fresh session. A normal chat summary is not enough because the next agent needs concrete state:
+- [English usage guide](docs/USAGE.md)
+- [繁體中文使用說明](docs/USAGE.zh-TW.md)
+- [简体中文使用说明](docs/USAGE.zh-CN.md)
 
-- current goal
+Additional reference docs:
+
+- [Hermes plugin wrapper contract](docs/PLUGIN_WRAPPER.md)
+- [Resume command behavior](docs/RESUME_COMMAND.md)
+- [Handoff packet schema](docs/HANDOFF_SCHEMA.md)
+- [Examples](docs/EXAMPLES.md)
+
+## What it creates
+
+Each handoff contains:
+
+- the current goal
 - repository path, branch, commit, and changed files
-- completed work and next recommended task
+- completed work, active work, blockers, and do-not-touch boundaries
 - verified / failing / not-run gates
-- known blockers
-- do-not-touch boundaries
-- safety/redaction status
-- a copy-paste resume prompt
+- redaction status
+- a copy-paste resume prompt for a fresh Hermes session
 
-## Install
-
-For local CLI development, install into your active Python environment:
-
-```bash
-python -m pip install -e .
-```
-
-For Hermes runtime/plugin use, install the package into the same interpreter that runs Hermes. On this local Hermes checkout that is:
-
-```bash
-cd /home/zycas/hermes-continuation
-/home/zycas/.hermes/hermes-agent/venv/bin/python3 -m pip install -e .
-```
-
-The package exposes the `hermes-continuation = hermes_continuation.plugin` entry point in the `hermes_agent.plugins` group.
-
-## CLI usage
-
-```bash
-hermes-handoff create \
-  --repo . \
-  --goal "Fix dashboard health page" \
-  --completed "Updated health copy" \
-  --verified "pytest -q passed" \
-  --not-run "browser QA" \
-  --do-not-touch "billing code" \
-  --next "Run build and browser QA"
-```
-
-Equivalent module form:
-
-```bash
-python -m hermes_continuation.cli create --repo . --goal "Smoke test" --next "Inspect output"
-```
-
-Opt-in automatic task-state collection can prefill task fields from safe repo-local Markdown docs while keeping all manual values:
-
-```bash
-hermes-handoff create \
-  --repo . \
-  --goal "Fix dashboard health page" \
-  --auto-task-state \
-  --completed "Manual note to preserve" \
-  --next "Run build and browser QA"
-```
-
-`--auto-task-state` is not enabled by default. It only scans `PROGRESS.md`, `README.md`, and direct `docs/*.md` files for bullets under task-state headings such as Completed Work, In Progress, Blockers, Do Not Touch, and Next Step. It skips generated/runtime directories such as `.git`, `.hermes`, `graphify-out`, `_knowledge_base`, `.pytest_cache`, `__pycache__`, and `*.egg-info`. Manual list values are appended after auto-collected values with de-duplication; manual `--next` remains authoritative.
-
-Output:
+Default output location:
 
 ```text
 .hermes/handoffs/<timestamp>-handoff.md
 .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-Resume from a handoff:
+These runtime handoff packets are local artifacts and should not be committed.
+
+## Install
+
+From this repository, install into your active Python environment for CLI use:
+
+```bash
+python -m pip install -e .
+```
+
+For Hermes plugin use, install the package into the same Python interpreter that runs Hermes, then enable the `hermes-continuation` entry-point plugin and restart Hermes so plugin discovery refreshes.
+
+## CLI quick start
+
+`create` requires both `--goal` and `--next`:
+
+```bash
+hermes-handoff create \
+  --repo . \
+  --goal "Finish dashboard QA" \
+  --completed "Updated health-card copy" \
+  --verified "pytest -q passed" \
+  --not-run "browser smoke test" \
+  --do-not-touch "billing migrations" \
+  --next "Run build and browser smoke test"
+```
+
+Resume later from the generated JSON:
 
 ```bash
 hermes-handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-By default, `resume` prints only the clean resume prompt so it can be pasted into a fresh Hermes session. Use `--markdown` when you want a labeled Markdown section.
+Optional automatic task-state collection is explicit opt-in only:
 
-## Hermes plugin wrapper
+```bash
+hermes-handoff create --repo . --goal "Finish QA" --next "Run browser smoke" --auto-task-state
+```
 
-The package also exposes a thin Hermes plugin wrapper through the `hermes_agent.plugins` entry point. Hermes entry-point plugins are opt-in. Enable this plugin in Hermes config:
+`--auto-task-state` conservatively reads repo-local Markdown docs (`PROGRESS.md`, `README.md`, and direct `docs/*.md`) and skips generated/runtime directories. Manual values are preserved, and manual `--next` remains authoritative.
+
+## Hermes plugin quick start
+
+The package exposes this entry point:
+
+```toml
+[project.entry-points."hermes_agent.plugins"]
+hermes-continuation = "hermes_continuation.plugin"
+```
+
+Enable it through Hermes' normal plugin-management flow, or configure:
 
 ```yaml
 plugins:
@@ -92,46 +94,44 @@ plugins:
   disabled: []
 ```
 
-Alternatively, use Hermes' normal plugin-management flow to enable `hermes-continuation`, then restart the Hermes CLI/gateway so plugin discovery refreshes.
-
-When loaded, the plugin registers two tools:
-
-- `hermes_handoff_create` — create a Markdown + JSON handoff packet.
-- `hermes_handoff_resume` — extract the resume prompt from a handoff JSON.
-
-On Hermes builds that expose plugin slash commands, the same wrapper also registers `/handoff` without modifying Hermes core:
+After restarting Hermes, builds with plugin slash-command support may expose:
 
 ```text
 /handoff help
-/handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA","auto_task_state":true}
-/handoff create repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA" auto_task_state=true
-/handoff {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
+/handoff create {"repo_path":".","goal":"Finish dashboard QA","next_task":"Run build and browser smoke","auto_task_state":true}
+/handoff create repo_path=. goal="Finish dashboard QA" next_task="Run build and browser smoke" auto_task_state=true
+/handoff {"repo_path":".","goal":"Finish dashboard QA","next_task":"Run build and browser smoke"}
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-`/handoff <json-or-key-value-args>` is treated as an implicit create shortcut. Bare `/handoff` or `/handoff help` shows the supported MVP forms instead of creating an underspecified packet. Plugin `auto_task_state` is optional and follows the same conservative collector boundaries as CLI `--auto-task-state`; `goal` and `next_task` are still required.
+The plugin also registers two tools: `hermes_handoff_create` and `hermes_handoff_resume`. Plugin `create` requires `goal` and `next_task`.
 
-### Verify Hermes discovery/load
+## Safety boundaries
 
-After installing into Hermes' interpreter and enabling the plugin, verify from the Hermes runtime:
+- Do not put raw secrets in goals, task notes, verification notes, or handoff files.
+- Common token/API-key/password-like values are redacted to `[REDACTED]`.
+- Private-key blocks fail closed instead of writing a handoff.
+- No full Hermes transcript parsing is performed.
+- Auto task-state collection is opt-in and limited to conservative repo-local Markdown files.
+- Generated/runtime artifacts such as `.hermes/handoffs/`, `graphify-out/`, `_knowledge_base/`, `.pytest_cache/`, `__pycache__/`, and `*.egg-info` should not be committed.
+
+## Verification
+
+Common checks before publishing changes:
 
 ```bash
-cd /home/zycas/hermes-continuation
+python -m pytest -q
 python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+python -m hermes_continuation.cli --help
+SMOKE_REPO="$(mktemp -d)"
+git -C "$SMOKE_REPO" init
+python -m hermes_continuation.cli create \
+  --repo "$SMOKE_REPO" \
+  --goal "Smoke test" \
+  --next "Inspect output"
+SMOKE_JSON="$(find "$SMOKE_REPO/.hermes/handoffs" -name '*-handoff.json' | sort | tail -n 1)"
+python -m hermes_continuation.cli resume "$SMOKE_JSON" >/dev/null
+git diff --check
 ```
 
-The smoke test uses `/home/zycas/.hermes/hermes-agent/venv/bin/python3`, an isolated temporary `HERMES_HOME`, and `/handoff help` only. It does not modify `~/.hermes/config.yaml` and does not create handoff packets.
-
-For a manual runtime probe, inspect Hermes plugin state with the normal Hermes plugin commands or confirm that `/handoff help` is available in a restarted Hermes session.
-
-See `docs/PLUGIN_WRAPPER.md` for the plugin contract, safety boundaries, runtime smoke gate, and troubleshooting.
-
-## MVP boundaries
-
-This MVP intentionally does **not** modify Hermes core. It does not auto-restart sessions, parse the full Hermes transcript, launch fresh agents, sync to cloud, or provide a dashboard. Automatic task-state collection is an explicit opt-in helper, not default magic.
-
-Those can come later after the packet schema proves useful.
-
-## Safety
-
-Handoff files may be committed, sent to another agent, or pasted into a new chat. For that reason the CLI redacts common token/API-key patterns and fails closed when it sees private key blocks.
+For complete operational guidance, troubleshooting, and contribution checklist, see the full usage guide in your preferred language.

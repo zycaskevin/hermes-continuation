@@ -63,6 +63,14 @@ def write_packet(tmp_path, packet):
     return path
 
 
+def test_resume_help_documents_markdown_option(tmp_path):
+    result = run_cli(["resume", "--help"], tmp_path)
+
+    assert result.returncode == 0
+    assert "handoff_json" in result.stdout
+    assert "--markdown" in result.stdout
+
+
 def test_resume_prints_resume_prompt_only(tmp_path):
     prompt = "Resume exactly this prompt\nwith a second line"
     handoff = write_packet(tmp_path, packet_with_prompt(prompt))

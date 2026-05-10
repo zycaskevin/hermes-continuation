@@ -10,6 +10,19 @@ def test_collect_git_state_degrades_for_non_git(tmp_path):
     assert state["changed_files"] == []
 
 
+def test_collect_git_state_degrades_for_missing_repo(tmp_path):
+    missing = tmp_path / "missing"
+
+    state = collect_git_state(missing)
+
+    assert state["path"] == str(missing.resolve())
+    assert state["git_available"] is False
+    assert state["branch"] is None
+    assert state["head"] is None
+    assert state["status_short"] == ""
+    assert state["changed_files"] == []
+
+
 def test_collect_git_state_for_git_repo(tmp_path):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, stdout=subprocess.PIPE)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)

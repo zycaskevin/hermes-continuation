@@ -3,13 +3,17 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.egg-info/
+build/
+dist/
 
 # Virtualenvs
 .venv/
 venv/
 
-# Runtime handoff artifacts
+# Runtime/generated artifacts
 .hermes/handoffs/
+graphify-out/
+_knowledge_base/
 
 # Local environment
 .env
