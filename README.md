@@ -57,6 +57,15 @@ The package also exposes a thin Hermes plugin wrapper through the `hermes_agent.
 - `hermes_handoff_create` — create a Markdown + JSON handoff packet.
 - `hermes_handoff_resume` — extract the resume prompt from a handoff JSON.
 
+On Hermes builds that expose plugin slash commands, the same wrapper also registers `/handoff` without modifying Hermes core:
+
+```text
+/handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
+/handoff resume .hermes/handoffs/<timestamp>-handoff.json
+```
+
+`/handoff <json-or-key-value-args>` is treated as an implicit create shortcut. Use `/handoff help` in-session for the supported MVP forms.
+
 See `docs/PLUGIN_WRAPPER.md` for the plugin contract, safety boundaries, and verification gates.
 
 ## MVP boundaries

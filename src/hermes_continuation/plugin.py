@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,27 @@ from .validate import ValidationError, validate_packet
 TOOLSET = "hermes_continuation"
 CREATE_TOOL = "hermes_handoff_create"
 RESUME_TOOL = "hermes_handoff_resume"
+HANDOFF_COMMAND = "handoff"
+
+
+_HANDOFF_ARGS_HINT = "create <json>|resume <handoff.json>"
+
+_HANDOFF_HELP = """Hermes handoff command usage:
+
+/handoff create {"repo_path":".","goal":"Current goal","next_task":"Next step"}
+/handoff create repo_path=. goal="Current goal" next_task="Next step"
+/handoff {"repo_path":".","goal":"Current goal","next_task":"Next step"}
+/handoff resume .hermes/handoffs/<timestamp>-handoff.json
+/handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
+
+Notes:
+- Bare /handoff shows this help instead of creating an underspecified packet.
+- Create requires goal and next_task, matching hermes_handoff_create.
+- The plugin command is sidecar-only and does not modify Hermes core.
+""".strip()
+
+_LIST_ARG_KEYS = {"completed", "verified", "failing", "not_run", "known_issues", "blockers", "do_not_touch"}
+_BOOL_ARG_KEYS = {"markdown"}
 
 
 def _json_response(payload: dict[str, Any]) -> str:
@@ -35,6 +57,116 @@ def _as_list(value: Any) -> list[str]:
 
 def _error(exc: Exception | str) -> str:
     return _json_response({"success": False, "error": str(exc)})
+
+
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"invalid boolean value: {value}")
+
+
+def _parse_json_object(text: str) -> dict[str, Any]:
+    data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ValueError("JSON arguments must contain an object")
+    return data
+
+
+def _parse_key_value_args(text: str) -> dict[str, Any]:
+    args: dict[str, Any] = {}
+    for token in shlex.split(text):
+        if "=" not in token:
+            raise ValueError(f"expected key=value argument, got: {token}")
+        key, value = token.split("=", 1)
+        key = key.strip().replace("-", "_")
+        if not key:
+            raise ValueError("argument key must not be empty")
+        if key in _LIST_ARG_KEYS:
+            args[key] = [item.strip() for item in value.split(",") if item.strip()]
+        elif key in _BOOL_ARG_KEYS:
+            args[key] = _parse_bool(value)
+        else:
+            args[key] = value
+    return args
+
+
+def _parse_create_command_args(text: str) -> dict[str, Any]:
+    payload = text.strip()
+    if not payload:
+        raise ValueError("create requires JSON or key=value arguments")
+    if payload.startswith("{"):
+        return _parse_json_object(payload)
+    return _parse_key_value_args(payload)
+
+
+def _parse_resume_command_args(text: str) -> dict[str, Any]:
+    payload = text.strip()
+    if not payload:
+        raise ValueError("resume requires a handoff JSON path")
+    if payload.startswith("{"):
+        return _parse_json_object(payload)
+
+    tokens = shlex.split(payload)
+    if not tokens:
+        raise ValueError("resume requires a handoff JSON path")
+
+    args: dict[str, Any] = {"handoff_json": tokens[0]}
+    for token in tokens[1:]:
+        if token in {"--markdown", "markdown"}:
+            args["markdown"] = True
+            continue
+        if "=" not in token:
+            raise ValueError(f"expected markdown=true/false option, got: {token}")
+        key, value = token.split("=", 1)
+        key = key.strip().replace("-", "_")
+        if key != "markdown":
+            raise ValueError(f"unsupported resume option: {key}")
+        args["markdown"] = _parse_bool(value)
+    return args
+
+
+def _split_handoff_command(raw_args: str) -> tuple[str, str]:
+    text = raw_args.strip()
+    if not text:
+        return "help", ""
+
+    first, sep, rest = text.partition(" ")
+    verb = first.strip().lower()
+    if verb in {"help", "--help", "-h"}:
+        return "help", ""
+    if verb in {"create", "resume"}:
+        return verb, rest.strip() if sep else ""
+    if text.startswith("{") or "=" in first:
+        return "create", text
+    return verb, rest.strip() if sep else ""
+
+
+def _load_handler_result(raw: str) -> dict[str, Any]:
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("handler returned non-object JSON")
+    return data
+
+
+def _format_create_command_result(result: dict[str, Any]) -> str:
+    if not result.get("success"):
+        return f"Handoff create failed: {result.get('error', 'unknown error')}"
+    return (
+        "Created Hermes handoff packet.\n"
+        f"- Markdown: {result.get('markdown_path')}\n"
+        f"- JSON: {result.get('json_path')}\n"
+        f"- Redactions: {result.get('redaction_count', 0)}\n\n"
+        f"Resume later with: /handoff resume {result.get('json_path')}"
+    )
+
+
+def _format_resume_command_result(result: dict[str, Any]) -> str:
+    if not result.get("success"):
+        return f"Handoff resume failed: {result.get('error', 'unknown error')}"
+    return str(result.get("output") or result.get("resume_prompt") or "")
 
 
 def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
@@ -108,6 +240,31 @@ def hermes_handoff_resume(args: dict[str, Any], **_: Any) -> str:
         return _error(exc)
 
 
+def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
+    """Handle the plugin `/handoff` slash command.
+
+    Hermes passes the raw trailing text after `/handoff`. The command remains
+    a UX shim: create/resume operations are delegated to the existing tool
+    handlers so the success/error envelope and validation behavior stay in one
+    place.
+    """
+    try:
+        verb, payload = _split_handoff_command(str(raw_args or ""))
+        if verb == "help":
+            return _HANDOFF_HELP
+        if verb == "create":
+            result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(payload)))
+            if not result.get("success") and not payload.strip():
+                return f"{_format_create_command_result(result)}\n\n{_HANDOFF_HELP}"
+            return _format_create_command_result(result)
+        if verb == "resume":
+            result = _load_handler_result(hermes_handoff_resume(_parse_resume_command_args(payload)))
+            return _format_resume_command_result(result)
+        return f"Unknown handoff subcommand: {verb}\n\n{_HANDOFF_HELP}"
+    except (json.JSONDecodeError, ValueError) as exc:
+        return f"Handoff command error: {exc}\n\n{_HANDOFF_HELP}"
+
+
 _CREATE_SCHEMA: dict[str, Any] = {
     "name": CREATE_TOOL,
     "description": "Create a Hermes continuation handoff packet as Markdown and JSON.",
@@ -145,7 +302,7 @@ _RESUME_SCHEMA: dict[str, Any] = {
 
 
 def register(ctx: Any) -> None:
-    """Register Hermes continuation tools with Hermes' plugin context."""
+    """Register Hermes continuation tools and optional command."""
     ctx.register_tool(
         name=CREATE_TOOL,
         toolset=TOOLSET,
@@ -162,3 +319,12 @@ def register(ctx: Any) -> None:
         description="Extract a fresh-session resume prompt from a handoff packet.",
         emoji="🔁",
     )
+
+    register_command = getattr(ctx, "register_command", None)
+    if callable(register_command):
+        register_command(
+            HANDOFF_COMMAND,
+            handler=hermes_handoff_command,
+            description="Create or resume Hermes continuation handoffs.",
+            args_hint=_HANDOFF_ARGS_HINT,
+        )

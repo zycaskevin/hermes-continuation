@@ -108,6 +108,35 @@ Plugin-wrapper acceptance gates:
 - Plugin handlers return JSON strings with safe success/error envelopes.
 - Existing CLI tests continue passing.
 
+## Command UX Development Plan
+
+Implement now:
+
+- Keep Hermes core untouched; expose `/handoff` through the sidecar plugin only.
+- Register a plugin slash command with `ctx.register_command` when the local Hermes plugin API provides it.
+- Keep registration backward-compatible: older/minimal plugin contexts that only expose `register_tool` must continue to load the two existing tools without crashing.
+- Support a safe MVP command surface:
+  - `/handoff create <json-or-key-value-args>` creates a Markdown + JSON packet through `hermes_handoff_create`.
+  - `/handoff <json-or-key-value-args>` is an implicit create shortcut.
+  - `/handoff resume <handoff.json>` extracts the stored resume prompt through `hermes_handoff_resume`.
+  - `/handoff help` documents the supported forms.
+- Reuse existing tool handlers and keep their JSON envelopes using `success`; do not introduce a generic `ok` contract.
+- Add fake-context tests for command registration, graceful absence of `register_command`, and command handler behavior.
+
+Do not implement:
+
+- Hermes core command registry changes.
+- Automatic transcript parsing/session restart.
+- Runtime handoff artifacts in git.
+
+Command-UX acceptance gates:
+
+- Docs explain the `/handoff` plugin command, argument formats, and no-core-modification boundary.
+- `register(ctx)` still registers `hermes_handoff_create` and `hermes_handoff_resume` tools.
+- `register(ctx)` additionally registers `/handoff` only when `register_command` exists.
+- `/handoff create ...` and `/handoff resume ...` route through existing handlers.
+- Targeted plugin-wrapper tests pass.
+
 ## Verification Gates
 
 - `pytest -q` passes.
@@ -135,7 +164,8 @@ Resume-specific gates:
 - MVP package, `create` CLI, docs, schema notes, and tests are implemented.
 - `resume` subcommand design is tracked in `docs/RESUME_COMMAND.md`.
 - `hermes-handoff resume <handoff.json>` is implemented and verified.
-- Plugin wrapper implementation is now in progress as a sidecar integration layer after the CLI contract stabilized.
+- Plugin wrapper is implemented as a sidecar integration layer after the CLI contract stabilized.
+- `/handoff` command UX is implemented as a plugin-only layer after confirming local Hermes exposes `PluginContext.register_command(name, handler, description="", args_hint="")` with handler signature `fn(raw_args: str) -> str | None`.
 - Runtime outputs are intentionally ignored via `.gitignore`: `.hermes/handoffs/`, `*.egg-info/`, `.pytest_cache/`, and local env files.
 
 ## Latest Verified Gates
@@ -163,6 +193,15 @@ Resume verification on 2026-05-10:
 - `git diff --check` passed.
 - Graphify maintenance hook passed and rebuilt `graphify-out/`.
 - Temp smoke artifacts were created under `/tmp` and removed.
+
+Command UX verification on 2026-05-10:
+
+- `python -m py_compile src/hermes_continuation/*.py tests/*.py` passed.
+- `python -m pytest -q tests/test_plugin_wrapper.py` passed: 8 tests.
+- `python -m pytest -q` passed: 25 tests.
+- `git diff --check` passed.
+- Fake-context coverage verifies `/handoff` registration when `register_command` exists and tool-only compatibility when it does not.
+- Command-handler coverage verifies help, create/resume roundtrip, implicit key/value create, and parse-error output.
 
 ## Known Issues / Risks
 
