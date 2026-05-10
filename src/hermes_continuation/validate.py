@@ -41,6 +41,8 @@ def validate_packet(packet: dict[str, Any]) -> None:
         raise ValidationError("source must be hermes-handoff")
     if not str(packet.get("current_goal", "")).strip():
         raise ValidationError("current_goal must not be empty")
+    if not str(packet.get("resume_prompt", "")).strip():
+        raise ValidationError("resume_prompt must not be empty")
 
     repo = _require_mapping(packet, "repo")
     task_state = _require_mapping(packet, "task_state")

@@ -20,7 +20,7 @@ def _add_repeatable(parser: argparse.ArgumentParser, name: str, help_text: str) 
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hermes-handoff", description="Create Hermes structured handoff packets")
+    parser = argparse.ArgumentParser(prog="hermes-handoff", description="Create and resume Hermes structured handoff packets")
     subparsers = parser.add_subparsers(dest="command")
 
     create = subparsers.add_parser("create", help="Create a Markdown + JSON handoff packet")
@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repeatable(create, "--blocker", "Known blocker; may be repeated")
     _add_repeatable(create, "--do-not-touch", "Safety boundary; may be repeated")
     create.set_defaults(func=handle_create)
+
+    resume = subparsers.add_parser("resume", help="Print the resume prompt from a handoff JSON")
+    resume.add_argument("handoff_json", help="Path to an existing handoff JSON file")
+    resume.add_argument("--markdown", action="store_true", help="Wrap the prompt in a concise Markdown section")
+    resume.set_defaults(func=handle_resume)
     return parser
 
 
@@ -71,6 +76,39 @@ def handle_create(args: argparse.Namespace) -> int:
 
     print(f"markdown: {md_path}")
     print(f"json: {json_path}")
+    return 0
+
+
+def handle_resume(args: argparse.Namespace) -> int:
+    handoff_path = Path(args.handoff_json).expanduser()
+    if not handoff_path.is_file():
+        print(f"error: handoff JSON not found: {handoff_path}", file=sys.stderr)
+        return 2
+
+    try:
+        data = json.loads(handoff_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        print(f"error: invalid JSON in {handoff_path}: {exc.msg}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"error: could not read {handoff_path}: {exc}", file=sys.stderr)
+        return 2
+
+    if not isinstance(data, dict):
+        print("error: handoff JSON must contain an object", file=sys.stderr)
+        return 2
+
+    try:
+        validate_packet(data)
+    except ValidationError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    prompt = str(data["resume_prompt"])
+    if args.markdown:
+        sys.stdout.write(f"## Resume Prompt\n\n{prompt}")
+    else:
+        sys.stdout.write(prompt)
     return 0
 
 
