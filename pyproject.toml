@@ -8,9 +8,24 @@ version = "0.1.0"
 description = "Structured Hermes long-task handoff packet generator"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
-authors = [{name = "Nancy AI"}]
+authors = [{name = "Arthur Liao"}]
+keywords = ["hermes", "continuation", "handoff", "agent", "plugin"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries",
+]
+license = {text = "Apache-2.0"}
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/zycaskevin/hermes-continuation"
+Repository = "https://github.com/zycaskevin/hermes-continuation"
+Issues = "https://github.com/zycaskevin/hermes-continuation/issues"
 
 [project.scripts]
 hermes-handoff = "hermes_continuation.cli:main"

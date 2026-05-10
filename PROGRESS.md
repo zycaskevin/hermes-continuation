@@ -38,6 +38,43 @@ Still out of scope:
 - Full Hermes transcript parsing or context-risk detection.
 - Committing generated handoff packets or Graphify output.
 
+## Phase 1 Public Repo Hardening Plan
+
+Implement now (small-scoped edits only):
+
+1. Align `pyproject.toml` public metadata with repository licensing and maintainer identity.
+2. Make runtime smoke test path selection portable through explicit env overrides.
+3. Add a minimal CI workflow for Python 3.11/3.12 install, test, compile, secret scan, and whitespace checks.
+4. Add `CHANGELOG.md` for `0.1.0` with Phase 1 readiness notes.
+5. Update public docs to clarify runtime-smoke compatibility and env overrides.
+
+Do not modify:
+
+- `graphify-out/`
+- `_knowledge_base/`
+- `.hermes/handoffs/`
+- caches
+- `*.egg-info`
+
+Phase 1 acceptance gates:
+
+- `pyproject.toml` license metadata states Apache-2.0 and author reflects Arthur Liao.
+- `tests/test_hermes_runtime_plugin_smoke.py` supports:
+  - `HERMES_AGENT_SOURCE` for Hermes source checkout path
+  - `HERMES_AGENT_PYTHON` for Hermes interpreter path
+  - preserved fallback: `/home/zycas/.hermes/hermes-agent`
+  - clean, actionable skip messages when runtime is unavailable
+- `.github/workflows/ci.yml` exists and runs:
+  - `actions/checkout`
+  - `actions/setup-python` matrix: 3.11, 3.12
+  - `python -m pip install -e .`
+  - `pytest`
+  - compile checks (`compileall` and `py_compile`)
+  - lightweight secret scan across committable source/docs/tests/config
+  - `git diff --check`
+- Runtime Hermes smoke test remains optional/portable (skip is acceptable when Hermes runtime is absent).
+- `CHANGELOG.md`, `README.md`, `docs/USAGE*.md`, and `docs/PLUGIN_WRAPPER.md` document compatibility and env overrides.
+
 ## Source of Truth
 
 Spec pack: `/home/zycas/_knowledge_base/hermes-continuation-mvp/`

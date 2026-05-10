@@ -186,6 +186,7 @@ python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
 What it verifies:
 
 - Uses `/home/zycas/.hermes/hermes-agent/venv/bin/python3` in a subprocess when that local Hermes checkout exists; otherwise pytest skips so the repository stays portable.
+- Supports `HERMES_AGENT_SOURCE` and `HERMES_AGENT_PYTHON` env overrides for non-`/home/zycas` environments while preserving the same default local fallback.
 - Sets `PYTHONPATH` to this repo's `src/` plus `/home/zycas/.hermes/hermes-agent` so Hermes runtime APIs and this editable source are imported together.
 - Uses a temporary `HERMES_HOME` containing only:
 
@@ -205,6 +206,14 @@ What it verifies:
 - Avoids creating runtime handoff packets; it only invokes `/handoff help`.
 
 Expected success output includes `SMOKE_OK` in the subprocess stdout.
+
+Override example:
+
+```bash
+HERMES_AGENT_SOURCE="/path/to/hermes-agent" \
+HERMES_AGENT_PYTHON="/path/to/hermes-agent/venv/bin/python3" \
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
 
 ## Troubleshooting
 

@@ -255,6 +255,22 @@ Runtime handoff packets 預設寫入：
 
 若要執行 smoke commands，建議使用 temporary repository，或用 `--output-dir` 指到 working tree 外部。
 
+## Runtime smoke 相容性
+
+`tests/test_hermes_runtime_plugin_smoke.py` 刻意設計為可攜：
+
+- 若 Hermes runtime 前置條件不存在，會 clean skip；
+- 預設 source fallback 路徑是 `/home/zycas/.hermes/hermes-agent`；
+- 預設 interpreter fallback 路徑是 `/home/zycas/.hermes/hermes-agent/venv/bin/python3`。
+
+你可以用環境變數覆寫：
+
+```bash
+HERMES_AGENT_SOURCE="/path/to/hermes-agent" \
+HERMES_AGENT_PYTHON="/path/to/hermes-agent/venv/bin/python3" \
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
+
 ## 安全與遮蔽
 
 <!-- Compatibility alias: ## Safety 與 redaction 邊界 -->

@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Compile Python files
+        run: |
+          python -m compileall -q src tests
+          python -m py_compile src/hermes_continuation/*.py tests/*.py
+
+      - name: Lightweight secret scan
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          root = pathlib.Path('.')
+          include_suffixes = {'.py', '.md', '.toml', '.yaml', '.yml', '.json', '.txt'}
+          include_prefixes = ('src/', 'tests/', 'docs/', '.github/workflows/', '')
+          skip_dirs = {
+              '.git', '.hermes', '_knowledge_base', 'graphify-out',
+              '.pytest_cache', '__pycache__', 'caches'
+          }
+          patterns = [
+              re.compile(r'(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*["\'](?!\[REDACTED\])[A-Za-z0-9_\-]{8,}["\']'),
+              re.compile(r'-----BEGIN (?:RSA|OPENSSH|EC|DSA) PRIVATE KEY-----'),
+              re.compile(r'ghp_[A-Za-z0-9]{20,}'),
+              re.compile(r'sk-[A-Za-z0-9]{16,}'),
+          ]
+
+          failures = []
+          for path in root.rglob('*'):
+              if not path.is_file():
+                  continue
+              rel = path.relative_to(root)
+              rel_str = rel.as_posix()
+              parts = set(rel.parts)
+              if parts & skip_dirs:
+                  continue
+              if rel_str.endswith('.egg-info') or '/.egg-info/' in rel_str:
+                  continue
+              if path.suffix not in include_suffixes:
+                  continue
+              if not (
+                  rel_str.startswith('src/')
+                  or rel_str.startswith('tests/')
+                  or rel_str.startswith('docs/')
+                  or rel_str.startswith('.github/workflows/')
+                  or rel_str in {'README.md', 'PROGRESS.md', 'pyproject.toml', 'CHANGELOG.md'}
+              ):
+                  continue
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              for pattern in patterns:
+                  if pattern.search(text):
+                      failures.append(rel_str)
+                      break
+
+          if failures:
+              print('Potential secret findings:')
+              for f in sorted(set(failures)):
+                  print(f' - {f}')
+              sys.exit(1)
+          print('Lightweight secret scan passed: 0 findings.')
+          PY
+
+      - name: Whitespace and conflict marker check
+        run: git diff --check

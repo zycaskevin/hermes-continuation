@@ -134,4 +134,18 @@ python -m hermes_continuation.cli resume "$SMOKE_JSON" >/dev/null
 git diff --check
 ```
 
+Runtime smoke compatibility notes:
+
+- The runtime smoke test is portable and may be skipped when a local Hermes runtime checkout/interpreter is unavailable.
+- Default local fallback paths are:
+  - source: `/home/zycas/.hermes/hermes-agent`
+  - python: `/home/zycas/.hermes/hermes-agent/venv/bin/python3`
+- Override these for your machine or CI-like local checks:
+
+```bash
+HERMES_AGENT_SOURCE="/path/to/hermes-agent" \
+HERMES_AGENT_PYTHON="/path/to/hermes-agent/venv/bin/python3" \
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
+
 For complete operational guidance, troubleshooting, and contribution checklist, see the full usage guide in your preferred language.

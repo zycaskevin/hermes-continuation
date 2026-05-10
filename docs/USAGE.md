@@ -251,6 +251,22 @@ Do not commit generated/runtime artifacts:
 
 If you run smoke commands, prefer a temporary repository or `--output-dir` pointing outside your working tree.
 
+## Runtime smoke compatibility
+
+`tests/test_hermes_runtime_plugin_smoke.py` intentionally stays portable for contributors:
+
+- it skips cleanly when Hermes runtime prerequisites are missing;
+- default fallback source path is `/home/zycas/.hermes/hermes-agent`;
+- default fallback interpreter path is `/home/zycas/.hermes/hermes-agent/venv/bin/python3`.
+
+You can override both defaults with environment variables:
+
+```bash
+HERMES_AGENT_SOURCE="/path/to/hermes-agent" \
+HERMES_AGENT_PYTHON="/path/to/hermes-agent/venv/bin/python3" \
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
+
 ## Safety and redaction
 
 Handoff content may be copied into another agent or shared with a teammate. Keep it secret-safe.
