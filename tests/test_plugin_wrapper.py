@@ -49,6 +49,7 @@ def test_register_adds_create_resume_tools_and_handoff_command():
     assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL]
     assert all(item["toolset"] == plugin.TOOLSET for item in ctx.tools)
     assert ctx.tools[0]["schema"]["parameters"]["required"] == ["goal", "next_task"]
+    assert "auto_task_state" in ctx.tools[0]["schema"]["parameters"]["properties"]
     assert ctx.tools[1]["schema"]["parameters"]["required"] == ["handoff_json"]
     assert callable(ctx.tools[0]["handler"])
     assert callable(ctx.tools[1]["handler"])
@@ -105,6 +106,62 @@ def test_plugin_create_and_resume_roundtrip(tmp_path):
     markdown_result = json.loads(plugin.hermes_handoff_resume({"handoff_json": str(json_path), "markdown": True}))
     assert markdown_result["success"] is True
     assert markdown_result["output"].startswith("## Resume Prompt\n\n")
+
+
+def test_plugin_create_auto_task_state_merges_manual_values(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+    (repo / "PROGRESS.md").write_text(
+        """# Progress
+
+## Completed Work
+- Auto plugin completed
+
+## Active Task
+- Auto plugin active
+
+## Known Issues
+- Auto plugin blocker
+
+## Out of scope
+- Auto plugin boundary
+
+## Next Recommended Task
+- Auto plugin next
+""",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "handoffs"
+
+    create_result = json.loads(
+        plugin.hermes_handoff_create(
+            {
+                "repo_path": str(repo),
+                "goal": "Auto plugin flow",
+                "active_task": "Manual plugin active",
+                "next_task": "Manual plugin next",
+                "completed": ["Manual plugin completed"],
+                "known_issues": ["Manual plugin blocker"],
+                "do_not_touch": ["Manual plugin boundary"],
+                "auto_task_state": True,
+                "output_dir": str(output_dir),
+            }
+        )
+    )
+
+    assert create_result["success"] is True
+    packet = json.loads(Path(create_result["json_path"]).read_text(encoding="utf-8"))
+    task_state = packet["task_state"]
+    assert "Auto plugin completed" in task_state["completed_work"]
+    assert "Manual plugin completed" in task_state["completed_work"]
+    assert "Auto plugin active" in task_state["in_progress"]
+    assert "Manual plugin active" in task_state["in_progress"]
+    assert "Auto plugin blocker" in task_state["known_blockers"]
+    assert "Manual plugin blocker" in task_state["known_blockers"]
+    assert "Auto plugin boundary" in task_state["do_not_touch"]
+    assert "Manual plugin boundary" in task_state["do_not_touch"]
+    assert task_state["next_recommended_task"] == "Manual plugin next"
 
 
 def test_handoff_command_create_and_resume_roundtrip(tmp_path):

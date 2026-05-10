@@ -12,6 +12,7 @@ from .git_state import collect_git_state
 from .packet import build_packet
 from .redaction import RedactionBlocked
 from .render_markdown import render_markdown
+from .task_state import collect_task_state, merge_task_state
 from .validate import ValidationError, validate_packet
 
 TOOLSET = "hermes_continuation"
@@ -24,8 +25,8 @@ _HANDOFF_ARGS_HINT = "create <json>|resume <handoff.json>"
 
 _HANDOFF_HELP = """Hermes handoff command usage:
 
-/handoff create {"repo_path":".","goal":"Current goal","next_task":"Next step"}
-/handoff create repo_path=. goal="Current goal" next_task="Next step"
+/handoff create {"repo_path":".","goal":"Current goal","next_task":"Next step","auto_task_state":true}
+/handoff create repo_path=. goal="Current goal" next_task="Next step" auto_task_state=true
 /handoff {"repo_path":".","goal":"Current goal","next_task":"Next step"}
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
@@ -33,11 +34,12 @@ _HANDOFF_HELP = """Hermes handoff command usage:
 Notes:
 - Bare /handoff shows this help instead of creating an underspecified packet.
 - Create requires goal and next_task, matching hermes_handoff_create.
+- auto_task_state is opt-in and conservatively reads repo-local docs only.
 - The plugin command is sidecar-only and does not modify Hermes core.
 """.strip()
 
 _LIST_ARG_KEYS = {"completed", "verified", "failing", "not_run", "known_issues", "blockers", "do_not_touch"}
-_BOOL_ARG_KEYS = {"markdown"}
+_BOOL_ARG_KEYS = {"markdown", "auto_task_state"}
 
 
 def _json_response(payload: dict[str, Any]) -> str:
@@ -53,6 +55,14 @@ def _as_list(value: Any) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     text = str(value).strip()
     return [text] if text else []
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return _parse_bool(str(value))
 
 
 def _error(exc: Exception | str) -> str:
@@ -192,15 +202,25 @@ def hermes_handoff_create(args: dict[str, Any], **_: Any) -> str:
 
         output_arg = args.get("output_dir")
         output_dir = Path(str(output_arg)).expanduser().resolve() if output_arg else repo_path / ".hermes" / "handoffs"
-
-        packet = build_packet(
-            current_goal=goal,
-            repo=collect_git_state(repo_path),
+        repo_state = collect_git_state(repo_path)
+        auto_task_state = collect_task_state(repo_path, repo_state) if _as_bool(args.get("auto_task_state")) else None
+        task_state = merge_task_state(
+            auto_task_state,
             completed_work=_as_list(args.get("completed")),
             in_progress=str(args.get("active_task") or args.get("in_progress") or ""),
             known_blockers=_as_list(args.get("known_issues") or args.get("blockers")),
             do_not_touch=_as_list(args.get("do_not_touch")),
-            next_recommended_task=next_task,
+            next_task=next_task,
+        )
+
+        packet = build_packet(
+            current_goal=goal,
+            repo=repo_state,
+            completed_work=task_state["completed_work"],
+            in_progress=task_state["in_progress"],
+            known_blockers=task_state["known_blockers"],
+            do_not_touch=task_state["do_not_touch"],
+            next_recommended_task=task_state["next_recommended_task"],
             verified_gates=_as_list(args.get("verified")),
             failing_gates=_as_list(args.get("failing")),
             not_run_gates=_as_list(args.get("not_run")),
@@ -275,6 +295,7 @@ _CREATE_SCHEMA: dict[str, Any] = {
             "goal": {"type": "string", "description": "Current goal for the handoff."},
             "active_task": {"type": "string", "description": "Current in-progress work, if any."},
             "next_task": {"type": "string", "description": "Next recommended task for the fresh session."},
+            "auto_task_state": {"type": "boolean", "description": "Opt in to conservative task-state collection from repo docs."},
             "output_dir": {"type": "string", "description": "Optional output directory. Defaults to <repo_path>/.hermes/handoffs."},
             "completed": {"type": "array", "items": {"type": "string"}},
             "verified": {"type": "array", "items": {"type": "string"}},

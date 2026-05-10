@@ -12,6 +12,7 @@ from .git_state import collect_git_state
 from .packet import build_packet
 from .redaction import RedactionBlocked
 from .render_markdown import render_markdown
+from .task_state import collect_task_state, merge_task_state
 from .validate import ValidationError, validate_packet
 
 
@@ -28,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--goal", required=True, help="Current goal for this handoff")
     create.add_argument("--in-progress", default="", help="Current in-progress work, if any")
     create.add_argument("--next", required=True, dest="next_task", help="Next recommended task")
+    create.add_argument("--auto-task-state", action="store_true", help="Opt in to conservative task-state collection from repo docs")
     create.add_argument("--output-dir", default=None, help="Output directory (default: <repo>/.hermes/handoffs)")
     _add_repeatable(create, "--completed", "Completed work item; may be repeated")
     _add_repeatable(create, "--verified", "Verified gate; may be repeated")
@@ -49,14 +51,24 @@ def handle_create(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else repo_path / ".hermes" / "handoffs"
 
     try:
-        packet = build_packet(
-            current_goal=args.goal,
-            repo=collect_git_state(repo_path),
+        repo_state = collect_git_state(repo_path)
+        auto_task_state = collect_task_state(repo_path, repo_state) if args.auto_task_state else None
+        task_state = merge_task_state(
+            auto_task_state,
             completed_work=args.completed,
             in_progress=args.in_progress,
             known_blockers=args.blocker,
             do_not_touch=args.do_not_touch,
-            next_recommended_task=args.next_task,
+            next_task=args.next_task,
+        )
+        packet = build_packet(
+            current_goal=args.goal,
+            repo=repo_state,
+            completed_work=task_state["completed_work"],
+            in_progress=task_state["in_progress"],
+            known_blockers=task_state["known_blockers"],
+            do_not_touch=task_state["do_not_touch"],
+            next_recommended_task=task_state["next_recommended_task"],
             verified_gates=args.verified,
             failing_gates=args.failing,
             not_run_gates=args.not_run,

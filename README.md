@@ -53,6 +53,19 @@ Equivalent module form:
 python -m hermes_continuation.cli create --repo . --goal "Smoke test" --next "Inspect output"
 ```
 
+Opt-in automatic task-state collection can prefill task fields from safe repo-local Markdown docs while keeping all manual values:
+
+```bash
+hermes-handoff create \
+  --repo . \
+  --goal "Fix dashboard health page" \
+  --auto-task-state \
+  --completed "Manual note to preserve" \
+  --next "Run build and browser QA"
+```
+
+`--auto-task-state` is not enabled by default. It only scans `PROGRESS.md`, `README.md`, and direct `docs/*.md` files for bullets under task-state headings such as Completed Work, In Progress, Blockers, Do Not Touch, and Next Step. It skips generated/runtime directories such as `.git`, `.hermes`, `graphify-out`, `_knowledge_base`, `.pytest_cache`, `__pycache__`, and `*.egg-info`. Manual list values are appended after auto-collected values with de-duplication; manual `--next` remains authoritative.
+
 Output:
 
 ```text
@@ -90,13 +103,13 @@ On Hermes builds that expose plugin slash commands, the same wrapper also regist
 
 ```text
 /handoff help
-/handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
-/handoff create repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA"
+/handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA","auto_task_state":true}
+/handoff create repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA" auto_task_state=true
 /handoff {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-`/handoff <json-or-key-value-args>` is treated as an implicit create shortcut. Bare `/handoff` or `/handoff help` shows the supported MVP forms instead of creating an underspecified packet.
+`/handoff <json-or-key-value-args>` is treated as an implicit create shortcut. Bare `/handoff` or `/handoff help` shows the supported MVP forms instead of creating an underspecified packet. Plugin `auto_task_state` is optional and follows the same conservative collector boundaries as CLI `--auto-task-state`; `goal` and `next_task` are still required.
 
 ### Verify Hermes discovery/load
 
@@ -115,7 +128,7 @@ See `docs/PLUGIN_WRAPPER.md` for the plugin contract, safety boundaries, runtime
 
 ## MVP boundaries
 
-This MVP intentionally does **not** modify Hermes core. It does not auto-restart sessions, parse the full Hermes transcript, launch fresh agents, sync to cloud, or provide a dashboard.
+This MVP intentionally does **not** modify Hermes core. It does not auto-restart sessions, parse the full Hermes transcript, launch fresh agents, sync to cloud, or provide a dashboard. Automatic task-state collection is an explicit opt-in helper, not default magic.
 
 Those can come later after the packet schema proves useful.
 

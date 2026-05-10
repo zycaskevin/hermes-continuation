@@ -2,11 +2,11 @@
 
 ## Current Goal
 
-Extend the completed MVP Python CLI sidecar with a documented, validated resume path:
+Extend the completed Hermes continuation sidecar/plugin MVP with **B: automatic task-state collection**:
 
-1. Lock the continuation direction in progress/design docs before code.
-2. Implement `hermes-handoff resume <handoff.json>` as a prompt-only extractor for fresh Hermes sessions.
-3. Keep plugin-wrapper work as a later sidecar integration layer; do not modify Hermes core yet.
+1. Lock the automatic task-state collection direction in this progress file before code.
+2. Add a repo-local, secret-safe collector that can infer useful handoff `task_state` fields from project files and git state while preserving existing manual CLI/plugin overrides.
+3. Keep the implementation as a sidecar/plugin-wrapper capability; do not modify Hermes core.
 
 ## Source of Truth
 
@@ -18,6 +18,7 @@ Key decisions already made:
 - Output both human-readable Markdown and machine-readable JSON.
 - First version is manual command generation, not automatic context-risk detection.
 - Handoff packet must include repo state, task state, verification gates, safety/redaction status, and a fresh-session resume prompt.
+- B: automatic task-state collection is the next sidecar improvement. It should infer task state from repo-local evidence, not from full Hermes transcript parsing.
 
 ## Completed MVP Scope
 
@@ -37,9 +38,8 @@ Implemented:
 Still out of scope for this sidecar phase:
 
 - Hermes core modifications
-- `/handoff` slash command
 - Automatic session restart
-- Automatic transcript parsing
+- Automatic full transcript parsing or context-risk detection
 - Dashboard / cloud sync / multi-agent workflow engine
 
 ## Next Scope: Resume Subcommand
@@ -137,7 +137,40 @@ Command-UX acceptance gates:
 - `/handoff create ...` and `/handoff resume ...` route through existing handlers.
 - Targeted plugin-wrapper tests pass.
 
-## Verification Gates
+## Automatic Task-State Collection Plan
+
+Selected direction: **B. Automatic task-state collection**.
+
+Why this is next:
+
+- The handoff packet already has the right `task_state` shape, but today most values come from manual CLI flags or plugin arguments.
+- A useful continuation tool should reduce manual handoff typing by extracting likely completed work, active work, blockers, do-not-touch boundaries, and next steps from repo-local evidence.
+- The collector should improve the packet while keeping the existing explicit/manual flags as the highest-priority source of truth.
+
+Implement now:
+
+- Add a small sidecar collector module that scans safe, repo-local project documents such as `PROGRESS.md`, `README.md`, and docs under `docs/` when present.
+- Use existing git state as context, especially changed-file summaries, without treating untracked generated artifacts as tasks.
+- Add an opt-in CLI/plugin flag such as `--auto-task-state` / `auto_task_state` so existing create behavior stays backward-compatible.
+- Merge behavior must be predictable: manual values override or append to automatically inferred values, never get silently discarded.
+- Preserve the current packet schema by mapping inferred values into existing `task_state.completed_work`, `in_progress`, `known_blockers`, `do_not_touch`, and `next_recommended_task` fields.
+- Keep degraded behavior: missing docs, non-git repos, unreadable files, or weak signals should produce a valid packet with the manual/default values rather than failing hard.
+- Keep all collected text redaction-safe through the existing redaction/validation path.
+
+Do not implement now:
+
+- Hermes core modifications.
+- Automatic session restart or launching a fresh Hermes session.
+- Full Hermes transcript parsing, context-risk detection, or cloud/dashboard sync.
+- Committing generated `.hermes/handoffs/` packets or `graphify-out/`.
+
+Automatic task-state acceptance gates:
+
+- Existing CLI/plugin create behavior remains compatible when auto collection is not enabled.
+- Auto collection can populate useful task-state fields from a temp repo with `PROGRESS.md` evidence.
+- Manual CLI/plugin values remain present when auto collection is enabled.
+- Secret/private-key safety behavior remains fail-closed or redacted before write.
+- Full pytest, runtime plugin smoke, source secret scan, `git diff --check`, and the Graphify hook pass before commit.
 
 - `pytest -q` passes.
 - `python -m hermes_continuation.cli --help` passes.
@@ -202,6 +235,18 @@ Command UX verification on 2026-05-10:
 - `git diff --check` passed.
 - Fake-context coverage verifies `/handoff` registration when `register_command` exists and tool-only compatibility when it does not.
 - Command-handler coverage verifies help, create/resume roundtrip, implicit key/value create, and parse-error output.
+
+Automatic task-state verification on 2026-05-10:
+
+- `python -m py_compile src/hermes_continuation/*.py tests/*.py` passed.
+- `python -m pytest -q` passed: 36 tests.
+- `python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py` passed: 1 test.
+- `python -m hermes_continuation.cli --help` passed.
+- `python -m hermes_continuation.cli create --help` passed.
+- Temp CLI `create --auto-task-state` + `resume` smoke passed and removed its temp handoff artifacts.
+- Source secret scan passed: 0 findings in committable files.
+- `git diff --check` passed.
+- Graphify maintenance hook passed and rebuilt `graphify-out/`: 147 nodes, 295 edges, 12 communities.
 
 ## Known Issues / Risks
 

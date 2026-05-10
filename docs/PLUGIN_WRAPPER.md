@@ -57,6 +57,7 @@ Main parameters:
 - `goal`: current goal. Required.
 - `next_task`: next recommended task. Required.
 - `active_task`: current in-progress work.
+- `auto_task_state`: optional boolean. When true, conservatively collects task-state hints from safe repo-local Markdown docs and merges them with manual values.
 - `completed`, `verified`, `failing`, `not_run`, `known_issues`, `do_not_touch`: optional string lists.
 - `output_dir`: optional output directory. Defaults to `<repo_path>/.hermes/handoffs`.
 
@@ -117,7 +118,7 @@ The command handler receives the trailing text as `raw_args: str` and returns a 
 Use JSON for the most predictable behavior:
 
 ```text
-/handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA"}
+/handoff create {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA","auto_task_state":true}
 ```
 
 The leading `create` is optional when the remaining text is JSON or key/value create arguments:
@@ -129,10 +130,10 @@ The leading `create` is optional when the remaining text is JSON or key/value cr
 Simple shell-style key/value arguments are also accepted for scalar fields:
 
 ```text
-/handoff create repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA"
+/handoff create repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA" auto_task_state=true
 ```
 
-Create uses the existing `hermes_handoff_create` handler, so `goal` and `next_task` remain required and the result contract still uses `success` in the underlying JSON envelope.
+Create uses the existing `hermes_handoff_create` handler, so `goal` and `next_task` remain required and the result contract still uses `success` in the underlying JSON envelope. `auto_task_state` is opt-in only; it scans `PROGRESS.md`, `README.md`, and direct `docs/*.md` files while skipping generated/runtime directories such as `.git`, `.hermes`, `graphify-out`, `_knowledge_base`, `.pytest_cache`, `__pycache__`, and `*.egg-info`.
 
 ### Resume through `/handoff`
 
@@ -155,6 +156,7 @@ Resume uses the existing `hermes_handoff_resume` handler and returns the stored 
 - The wrapper does not modify Hermes core.
 - The wrapper does not start or restart Hermes sessions.
 - The wrapper does not parse full transcripts automatically.
+- Automatic task-state collection is explicit opt-in and reads only conservative repo-local docs.
 - The `/handoff` command is plugin-only and gracefully disappears on Hermes versions without `register_command`.
 - The wrapper does not bypass the existing redaction/private-key fail-closed behavior.
 - Runtime handoff artifacts remain under `.hermes/handoffs/` by default and should not be committed.
