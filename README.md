@@ -42,6 +42,23 @@ Output:
 .hermes/handoffs/<timestamp>-handoff.json
 ```
 
+## Resume from a handoff
+
+```bash
+hermes-handoff resume .hermes/handoffs/<timestamp>-handoff.json
+```
+
+By default, `resume` prints only the clean resume prompt so it can be pasted into a fresh Hermes session. Use `--markdown` when you want a labeled Markdown section.
+
+## Hermes plugin wrapper
+
+The package also exposes a thin Hermes plugin wrapper through the `hermes_agent.plugins` entry point. After editable install, Hermes can discover `hermes-continuation` as a plugin and register two tools:
+
+- `hermes_handoff_create` — create a Markdown + JSON handoff packet.
+- `hermes_handoff_resume` — extract the resume prompt from a handoff JSON.
+
+See `docs/PLUGIN_WRAPPER.md` for the plugin contract, safety boundaries, and verification gates.
+
 ## MVP boundaries
 
 This MVP intentionally does **not** modify Hermes core. It does not auto-restart sessions, parse the full Hermes transcript, launch fresh agents, sync to cloud, or provide a dashboard.

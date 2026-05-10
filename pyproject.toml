@@ -15,6 +15,9 @@ dependencies = []
 [project.scripts]
 hermes-handoff = "hermes_continuation.cli:main"
 
+[project.entry-points."hermes_agent.plugins"]
+hermes-continuation = "hermes_continuation.plugin"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

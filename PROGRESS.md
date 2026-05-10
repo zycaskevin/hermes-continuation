@@ -80,6 +80,34 @@ Do not implement yet:
 4. Add CLI tests for successful prompt-only output and error paths.
 5. Run compile, pytest, help, resume-help, create/resume smoke, and git status verification.
 
+
+## Plugin Wrapper Development Plan
+
+Implement now:
+
+- Keep Hermes core untouched; expose the sidecar through a pip-installable Hermes plugin entry point.
+- Register two thin plugin tools around the existing CLI contracts:
+  - `hermes_handoff_create` builds and writes Markdown + JSON handoff packets.
+  - `hermes_handoff_resume` reads an existing handoff JSON and returns the resume prompt.
+- Reuse existing packet, git-state, validation, redaction, and Markdown rendering modules instead of duplicating business logic.
+- Return JSON strings from handlers because Hermes plugin tools are registered through the normal tool registry.
+- Add tests with a fake plugin context plus integration-style handler calls against a temporary git repo.
+
+Do not implement yet:
+
+- Hermes core changes.
+- Automatic session restart or transcript parsing.
+- A built-in `/handoff` slash command.
+- Dashboard/cloud sync.
+
+Plugin-wrapper acceptance gates:
+
+- `docs/PLUGIN_WRAPPER.md` documents install/enable/use, boundaries, and safety behavior.
+- `pyproject.toml` exposes the `hermes_agent.plugins` entry point.
+- `register(ctx)` registers exactly `hermes_handoff_create` and `hermes_handoff_resume`.
+- Plugin handlers return JSON strings with safe success/error envelopes.
+- Existing CLI tests continue passing.
+
 ## Verification Gates
 
 - `pytest -q` passes.
@@ -107,7 +135,7 @@ Resume-specific gates:
 - MVP package, `create` CLI, docs, schema notes, and tests are implemented.
 - `resume` subcommand design is tracked in `docs/RESUME_COMMAND.md`.
 - `hermes-handoff resume <handoff.json>` is implemented and verified.
-- Plugin wrapper remains a later sidecar integration layer after the CLI contract stabilizes.
+- Plugin wrapper implementation is now in progress as a sidecar integration layer after the CLI contract stabilized.
 - Runtime outputs are intentionally ignored via `.gitignore`: `.hermes/handoffs/`, `*.egg-info/`, `.pytest_cache/`, and local env files.
 
 ## Latest Verified Gates
@@ -141,4 +169,4 @@ Resume verification on 2026-05-10:
 - Terminal/file tools were previously affected by a stale missing cwd (`/tmp/vault-for-llm-verify-vDN0F3`); use Python execution with absolute paths from `/home/zycas` if needed.
 - OpenCode/delegate outputs must be verified by checking actual files and test results; self-report is not evidence.
 - Do not commit generated smoke handoff artifacts unless intentionally documenting examples.
-- This sidecar is still manual: it does not add a Hermes core `/handoff` command or automatic context-risk detection yet.
+- This sidecar is still manual: the plugin wrapper exposes tools, but it does not add a Hermes core `/handoff` command or automatic context-risk detection yet.
