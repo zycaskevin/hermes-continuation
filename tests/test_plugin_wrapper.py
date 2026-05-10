@@ -2,6 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from hermes_continuation import plugin
 
 
@@ -30,6 +32,22 @@ class ToolOnlyFakeCtx:
 
     def register_tool(self, **kwargs):
         self.tools.append(kwargs)
+
+
+class IncompatibleCommandFakeCtx:
+    def __init__(self):
+        self.tools = []
+        self.commands = []
+
+    def register_tool(self, **kwargs):
+        self.tools.append(kwargs)
+
+    def register_command(self, name, handler):
+        self.commands.append({"name": name, "handler": handler})
+
+
+class MissingRegisterToolFakeCtx:
+    pass
 
 
 def init_git_repo(path: Path) -> None:
@@ -68,6 +86,26 @@ def test_register_without_command_api_still_registers_tools():
 
     names = [item["name"] for item in ctx.tools]
     assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL]
+
+
+def test_register_with_incompatible_command_api_keeps_tools_and_records_warning():
+    ctx = IncompatibleCommandFakeCtx()
+    plugin.register(ctx)
+
+    names = [item["name"] for item in ctx.tools]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL]
+    assert ctx.commands == []
+    warnings = ctx._hermes_continuation_registration_warnings
+    assert isinstance(warnings, list)
+    assert len(warnings) == 1
+    assert "optional /handoff command registration" in warnings[0]
+    assert "register_command" in warnings[0]
+    assert "incompatible API" in warnings[0]
+
+
+def test_register_missing_register_tool_raises_runtime_error():
+    with pytest.raises(RuntimeError, match="register_tool"):
+        plugin.register(MissingRegisterToolFakeCtx())
 
 
 def test_plugin_create_and_resume_roundtrip(tmp_path):

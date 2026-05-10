@@ -75,6 +75,48 @@ Phase 1 acceptance gates:
 - Runtime Hermes smoke test remains optional/portable (skip is acceptable when Hermes runtime is absent).
 - `CHANGELOG.md`, `README.md`, `docs/USAGE*.md`, and `docs/PLUGIN_WRAPPER.md` document compatibility and env overrides.
 
+## Phase 2 Runtime Compatibility Plan
+
+Implement now (small-scoped compatibility hardening only):
+
+1. Inspect the current plugin wrapper registration path against Hermes runtime plugin APIs.
+2. Make plugin API capability detection explicit and conservative:
+   - `register_tool` is required for the plugin wrapper to be useful.
+   - `/handoff` command registration remains optional.
+   - Missing command registration must not prevent the two handoff tools from loading.
+   - Incompatible command-registration signatures should degrade gracefully instead of crashing plugin load.
+3. Add boundary regression tests for runtimes that:
+   - expose full tool + command APIs;
+   - expose tool APIs only;
+   - expose command APIs with an incompatible signature;
+   - lack the required tool registration API.
+4. Preserve the current tool contracts and JSON result envelopes; do not rename tools, toolset, command, or success fields.
+5. Keep this as a sidecar/plugin-wrapper compatibility pass; do not modify Hermes core.
+
+Phase 2 acceptance gates:
+
+- `register(ctx)` still registers `hermes_handoff_create` and `hermes_handoff_resume` on compatible Hermes plugin contexts.
+- `/handoff` registers only when the runtime command API is available and compatible.
+- Command API incompatibility is recorded on the plugin context when possible and does not crash tool registration.
+- Missing required `register_tool` fails with an explicit error instead of silently pretending the plugin loaded.
+- Existing CLI create/resume behavior remains unchanged.
+- `python -m pytest -q` passes.
+- `python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py` passes or is cleanly skipped when Hermes runtime is unavailable.
+- `python -m py_compile src/hermes_continuation/*.py tests/*.py` passes.
+- Source secret scan reports 0 findings in committable source/docs/tests/config files.
+- `git diff --check` passes.
+- Graphify maintenance hook is executed after code/doc changes.
+- Commit is scoped and excludes `_knowledge_base/`, `graphify-out/`, `.hermes/handoffs/`, cache directories, and package build artifacts.
+
+Still out of scope for Phase 2:
+
+- Hermes core modifications.
+- Automatic session restart or context-risk detection.
+- Cross-agent packet standardization.
+- Expanding auto task-state beyond the existing conservative repo-doc collector.
+- Committing generated handoff packets or Graphify output.
+
+
 ## Source of Truth
 
 Spec pack: `/home/zycas/_knowledge_base/hermes-continuation-mvp/`

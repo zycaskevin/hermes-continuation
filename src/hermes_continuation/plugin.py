@@ -324,7 +324,11 @@ _RESUME_SCHEMA: dict[str, Any] = {
 
 def register(ctx: Any) -> None:
     """Register Hermes continuation tools and optional command."""
-    ctx.register_tool(
+    register_tool = getattr(ctx, "register_tool", None)
+    if not callable(register_tool):
+        raise RuntimeError("Hermes continuation plugin requires callable ctx.register_tool")
+
+    register_tool(
         name=CREATE_TOOL,
         toolset=TOOLSET,
         schema=_CREATE_SCHEMA,
@@ -332,7 +336,7 @@ def register(ctx: Any) -> None:
         description="Create a structured Hermes handoff packet.",
         emoji="🧾",
     )
-    ctx.register_tool(
+    register_tool(
         name=RESUME_TOOL,
         toolset=TOOLSET,
         schema=_RESUME_SCHEMA,
@@ -343,9 +347,23 @@ def register(ctx: Any) -> None:
 
     register_command = getattr(ctx, "register_command", None)
     if callable(register_command):
-        register_command(
-            HANDOFF_COMMAND,
-            handler=hermes_handoff_command,
-            description="Create or resume Hermes continuation handoffs.",
-            args_hint=_HANDOFF_ARGS_HINT,
-        )
+        try:
+            register_command(
+                HANDOFF_COMMAND,
+                handler=hermes_handoff_command,
+                description="Create or resume Hermes continuation handoffs.",
+                args_hint=_HANDOFF_ARGS_HINT,
+            )
+        except TypeError as exc:
+            warning = (
+                "Skipped optional /handoff command registration: register_command "
+                f"appears to use an incompatible API ({exc})"
+            )
+            warnings = getattr(ctx, "_hermes_continuation_registration_warnings", None)
+            if not isinstance(warnings, list):
+                warnings = []
+            warnings.append(warning)
+            try:
+                setattr(ctx, "_hermes_continuation_registration_warnings", warnings)
+            except (AttributeError, TypeError):
+                pass
