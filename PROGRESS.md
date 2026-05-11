@@ -25,6 +25,11 @@ The public sidecar/plugin product currently includes these implemented surfaces:
 - CLI command: `hermes-handoff prepare`
   - Builds a read-only preview of a safe create command and packet intent.
   - Does not write `.hermes/handoffs/` output.
+- CLI command: `hermes-handoff watch`
+  - Implements one-shot read-only/advisory auto-trigger evaluation.
+  - Observes local signals and reuses existing doctor/prepare helpers to advise or preview.
+  - Supports `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, `--json`, `--goal`, and `--next`.
+  - Never writes `.hermes/handoffs/`, never calls hidden create behavior, and does not run as a daemon by default.
 - CLI option: `--auto-task-state`
   - Opt-in repo-local task-state collection from safe project documents and git context.
   - Manual values remain authoritative over inferred values.
@@ -61,8 +66,10 @@ The current product remains a sidecar/plugin integration with explicit user cont
 - No hidden writes:
   - `doctor` recommends.
   - `prepare` previews.
+  - `watch` observes/advises/previews through existing helpers.
   - `create` writes only when explicitly invoked.
 - `/handoff` exists only through the plugin wrapper on compatible Hermes runtimes; it is not a built-in Hermes core command.
+- No plugin/gateway `/handoff watch` command is implemented yet; the watch MVP is CLI-only.
 - Generated runtime artifacts such as `.hermes/handoffs/`, `graphify-out/`, caches, and package build outputs should not be committed unless a future task explicitly asks for that.
 
 ## Recommended Next Roadmap
@@ -102,10 +109,14 @@ Remaining optional observation:
 
 ### P3 — Optional watch/advisory auto-trigger design and implementation
 
-Status: planning completed; implementation has not started.
+Status: implementation completed for one-shot CLI `hermes-handoff watch`; plugin/gateway watch is not implemented.
 
-- Implementation plan created: `docs/WATCH_ADVISORY_TRIGGER_PLAN.md`.
-- Recommended start is one-shot CLI `hermes-handoff watch`, no plugin/gateway command until the CLI contract is stable.
+- Implementation plan updated: `docs/WATCH_ADVISORY_TRIGGER_PLAN.md`.
+- One-shot CLI `hermes-handoff watch` is implemented as read-only/advisory.
+- Watch observes local signals once and reuses existing doctor/prepare helpers to advise or preview.
+- Supported watch flags include `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, `--json`, `--goal`, and `--next`.
+- Missing `goal` or `next` degrades to `advise`; `block` suppresses secrets and safe create commands.
+- No plugin/gateway `/handoff watch` command exists yet.
 - Keep the policy advisory-first.
 - Preserve explicit-write-only behavior: automated checks may recommend or preview, but must not silently create packets.
 - Continue to avoid Hermes core session lifecycle changes unless a separate approved task changes the boundary.
@@ -151,6 +162,7 @@ Key decisions already made:
 - Handoff packets include repo state, task state, verification gates, safety/redaction status, and a fresh-session resume prompt.
 - Automatic task-state collection is repo-local and opt-in via `--auto-task-state`; it does not parse full Hermes transcripts.
 - The plugin wrapper may expose tools and plugin-only `/handoff` commands on compatible Hermes runtimes, but it does not change Hermes core.
+- One-shot `hermes-handoff watch` is a CLI-only advisory surface; plugin/gateway watch remains out of scope until separately approved.
 
 ## Known Issues / Risks
 
@@ -158,7 +170,7 @@ Key decisions already made:
 - OpenCode/delegate/subagent outputs must be verified by checking actual files and test results; self-report is not evidence.
 - Do not commit generated smoke handoff artifacts unless intentionally documenting examples.
 - The plugin wrapper now exposes plugin-only `/handoff` surfaces where compatible, but it still does not add a Hermes core `/handoff` command.
-- The sidecar remains explicit-action oriented: there is no automatic context-risk detection that writes packets or restarts sessions.
+- The sidecar remains explicit-action oriented: one-shot watch may recommend or preview, but there is no automatic context-risk detection that writes packets, runs a daemon, or restarts sessions.
 - Secret safety remains central: examples and docs should omit real API keys, tokens, passwords, chat IDs, message IDs, and connection strings or show them only as `[REDACTED]`.
 
 ## Historical Archive

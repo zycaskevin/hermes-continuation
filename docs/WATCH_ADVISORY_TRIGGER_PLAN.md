@@ -1,8 +1,10 @@
 # Watch / Advisory Auto-Trigger Implementation Plan
 
+Status: implemented for the one-shot CLI MVP. `hermes-handoff watch` now exists as a read-only/advisory CLI command; plugin/gateway `/handoff watch` is not implemented.
+
 ## Goal
 
-Add an optional `hermes-handoff watch` command as a read-only/advisory sidecar surface. The command evaluates local signals and prints or delivers a recommendation or prepare preview, but it never writes handoff packets and never creates `.hermes/handoffs/` output.
+Add an optional `hermes-handoff watch` command as a read-only/advisory sidecar surface. This has been implemented for the one-shot CLI MVP. The command evaluates local signals and prints or delivers a recommendation or prepare preview, but it never writes handoff packets and never creates `.hermes/handoffs/` output.
 
 The first version should help users notice when a handoff would be useful without changing the existing boundary:
 
@@ -13,19 +15,20 @@ The first version should help users notice when a handoff would be useful withou
 
 ## Non-goals
 
-This plan does not include:
+This implemented MVP does not include:
 
 - Hermes core changes.
 - Automatic session restart or fresh-agent launch.
 - Full Hermes transcript parsing.
 - Hidden `create` invocation or hidden packet writes.
 - A daemon/background loop by default.
+- Plugin/gateway `/handoff watch`.
 - Cloud sync, dashboard UI, or remote telemetry.
 - Committing generated artifacts such as `.hermes/handoffs/`, `graphify-out/`, caches, or package build output.
 
 ## Design
 
-`watch` should be a thin wrapper/orchestrator over existing public sidecar behavior:
+`watch` is implemented as a thin wrapper/orchestrator over existing public sidecar behavior:
 
 1. Normalize explicit CLI signal inputs into a small watch signal model.
 2. Reuse `evaluate_handoff_recommendation()` from `src/hermes_continuation/doctor.py` for recommendation level, reasons, and safety-sensitive decision behavior.
@@ -39,7 +42,7 @@ The watch implementation should prefer composition over duplicate policy logic. 
 
 ### One-shot command only
 
-Implement one-shot evaluation first:
+Implemented one-shot evaluation:
 
 ```bash
 hermes-handoff watch --repo . --goal "Finish release QA" --next "Run final smoke" [--json]
@@ -52,11 +55,11 @@ Behavior:
 - print a recommendation or prepare preview;
 - exit with no background loop and no writes.
 
-Do not add `--interval` or long-running monitoring in the MVP. A future `--interval` can be considered only after the one-shot CLI contract proves useful and quiet enough.
+No `--interval` or long-running monitoring is implemented in the MVP. A future `--interval` can be considered only after the one-shot CLI contract proves useful and quiet enough.
 
 ### Optional signal inputs
 
-Support explicit optional inputs so tests and callers can model local state without transcript parsing:
+Implemented explicit optional inputs let tests and callers model local state without transcript parsing:
 
 - `--tool-calls <int>`: number of tool calls observed by the caller.
 - `--elapsed-minutes <int>`: approximate task/session duration.
@@ -66,7 +69,7 @@ Support explicit optional inputs so tests and callers can model local state with
 - `--verified <text>`: repeatable passed verification gate.
 - `--explicit-request`: user explicitly asked for a handoff/continuation checkpoint.
 
-Use conservative defaults. Missing `goal` or `next` must degrade to `advise`, not fabricate `prepare` state.
+Use conservative defaults. Missing `goal` or `next` degrades to `advise`, not fabricated `prepare` state. Public docs call out the core supported watch flags: `--goal`, `--next`, `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, and `--json`.
 
 ### Output levels
 
@@ -93,22 +96,22 @@ Use conservative defaults. Missing `goal` or `next` must degrade to `advise`, no
 
 ## Task Breakdown
 
-### Task 1 — Watch signal model/helper
+### Task 1 — Watch signal model/helper — completed
 
 - Add a small signal model/helper module, for example `src/hermes_continuation/watch.py`, or extend `doctor` carefully if that keeps policy centralized.
 - Convert CLI values into the existing recommendation inputs expected by `evaluate_handoff_recommendation()`.
 - Include signal provenance in JSON output so users can see whether a level came from tool count, elapsed time, dirty repo state, failing/not-run gates, explicit request, or safety blockers.
 - Avoid duplicating the full recommendation matrix.
 
-### Task 2 — CLI parser/handler
+### Task 2 — CLI parser/handler — completed
 
 - Add `watch` to the CLI parser beside `create`, `resume`, `doctor`, and `prepare`.
 - Accept `--repo`, `--goal`, `--next`, `--json`, and the MVP signal flags.
 - Default to human-readable output; support JSON for integrations.
 - Keep exit behavior conservative: normal advisory levels exit successfully; argument errors or internal failures exit non-zero.
-- Do not add plugin/gateway commands in the MVP.
+- No plugin/gateway commands are added in the MVP.
 
-### Task 3 — Tests
+### Task 3 — Tests — completed
 
 Add focused tests for:
 
@@ -125,14 +128,14 @@ Suggested test files:
 - `tests/test_cli_watch.py` for CLI parser, human output, JSON output, and exit behavior.
 - Extend `tests/test_public_docs.py` only if public docs are updated in the implementation task.
 
-### Task 4 — Docs updates
+### Task 4 — Docs updates — completed
 
-When implementation starts, update public docs only after the CLI contract is stable:
+The public docs now describe the stable one-shot CLI watch contract:
 
 - `README.md`: add a short read-only `watch` example.
 - `docs/USAGE.md`, `docs/USAGE.zh-TW.md`, `docs/USAGE.zh-CN.md`: describe one-shot watch, no-write behavior, and non-goals.
 - `docs/AUTOMATIC_HANDOFF_TRIGGER_POLICY.md`: record that one-shot watch is the first auto-trigger implementation surface.
-- `docs/PLUGIN_WRAPPER.md`: mention no plugin/gateway watch command yet, if relevant.
+- Plugin/gateway docs remain explicit that no watch command exists yet where touched by this task.
 - `PROGRESS.md`: mark implementation status accurately.
 
 ### Task 5 — Runtime smoke/verification
@@ -144,7 +147,7 @@ When implementation starts, update public docs only after the CLI contract is st
 
 ## Acceptance Criteria
 
-Implementation is complete only when all of the following are true:
+The one-shot CLI implementation is complete when all of the following are true:
 
 - `hermes-handoff watch` exists as a one-shot CLI command.
 - `watch` supports `--repo`, `--goal`, `--next`, `--json`, `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, repeatable `--not-run`, repeatable `--failing`, repeatable `--verified`, and `--explicit-request`.
@@ -153,7 +156,7 @@ Implementation is complete only when all of the following are true:
 - `watch` never writes packets, never creates `.hermes/handoffs/`, and never invokes hidden `create` behavior.
 - Missing `goal` or `next` degrades to `advise` unless blocked by safety.
 - Private-key or sensitive-value cases return `block` without raw secret values or raw secret-looking paths.
-- Public docs clearly state the read-only boundary and non-goals.
+- Public docs clearly state the read-only boundary, no plugin/gateway watch MVP boundary, and non-goals.
 - Generated artifacts are not staged or committed.
 
 ## Exact Verification Commands
@@ -293,4 +296,4 @@ git status --short
 
 ## Recommended Start
 
-Implement one-shot CLI `watch` first. Do not add plugin/gateway commands, background loops, or `--interval` until the CLI contract, output shape, and no-write safety behavior are stable.
+One-shot CLI `watch` has been implemented first. Do not add plugin/gateway commands, background loops, or `--interval` until a separate task approves expanding the CLI-only MVP boundary.

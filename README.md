@@ -2,7 +2,7 @@
 
 `hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work.
 
-The current MVP is intentionally narrow: `doctor` recommends, `prepare` previews, and `create` writes a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or perform hidden writes.
+The current MVP is intentionally narrow: `doctor` recommends, `prepare` previews, `create` writes a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing, and `watch` performs a one-shot read-only advisory check using the existing doctor/prepare helpers. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, run a daemon by default, or perform hidden writes.
 
 ## Usage guides
 
@@ -84,7 +84,22 @@ hermes-handoff doctor --repo . --goal "Finish QA" --next "Run browser smoke"
 hermes-handoff prepare --repo . --goal "Finish QA" --next "Run browser smoke"
 ```
 
-Plain-language boundary: `doctor` recommends whether a handoff is useful; `prepare` builds a read-only preview and may show a safe `hermes-handoff create ...` command; only `create` writes `.hermes/handoffs/` packet files. If safety blockers are found, the level is `block`, secret values are suppressed, and no create command is shown. To write a packet after a preview, the user must explicitly run the shown `create` command or invoke create through the plugin.
+One-shot advisory watch is also available from the CLI:
+
+```bash
+hermes-handoff watch \
+  --repo . \
+  --goal "Finish QA" \
+  --next "Run browser smoke" \
+  --tool-calls 8 \
+  --elapsed-minutes 45 \
+  --dirty-threshold 1 \
+  --explicit-request
+```
+
+`hermes-handoff watch` observes local signals once, prints advice or a prepare preview, and exits. It is read-only/advisory: it never writes `.hermes/handoffs/`, never calls hidden `create`, and does not start a daemon by default. Supported watch flags include `--goal`, `--next`, `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, and `--json`. Missing `goal` or `next` degrades to `advise`; `block` suppresses secret values and safe create commands.
+
+Plain-language boundary: `doctor` recommends whether a handoff is useful; `prepare` builds a read-only preview and may show a safe `hermes-handoff create ...` command; `create` writes `.hermes/handoffs/` packet files; `watch` observes/advises/previews through existing doctor/prepare helpers. If safety blockers are found, the level is `block`, secret values are suppressed, and no create command is shown. To write a packet after a preview, the user must explicitly run the shown `create` command or invoke create through the plugin.
 
 ## Hermes plugin quick start
 
@@ -116,7 +131,7 @@ After restarting Hermes, builds with plugin slash-command support may expose:
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-The plugin also registers three tools: `hermes_handoff_prepare`, `hermes_handoff_create`, and `hermes_handoff_resume`. Plugin `prepare` is read-only and has no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` exposes the same preview behavior through the optional slash command.
+The plugin also registers three tools: `hermes_handoff_prepare`, `hermes_handoff_create`, and `hermes_handoff_resume`. Plugin `prepare` is read-only and has no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` exposes the same preview behavior through the optional slash command. There is no plugin/gateway `/handoff watch` command yet; watch is CLI-only in this MVP.
 
 ## Safety boundaries
 
@@ -124,6 +139,7 @@ The plugin also registers three tools: `hermes_handoff_prepare`, `hermes_handoff
 - Common token/API-key/password-like values are redacted to `[REDACTED]`.
 - Private-key blocks fail closed instead of writing a handoff.
 - `doctor` and `prepare` are read-only; they never write `.hermes/handoffs/` packet files.
+- `watch` is a one-shot read-only CLI advisory; it never writes `.hermes/handoffs/`, never invokes hidden create behavior, and does not run as a daemon by default.
 - `prepare` may show a safe create command, but the user must explicitly run `create` before any packet is written.
 - Safety blockers return `block`, suppress safe create commands, and do not print secret values.
 - No full Hermes transcript parsing is performed.

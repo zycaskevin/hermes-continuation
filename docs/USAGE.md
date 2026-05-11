@@ -2,7 +2,7 @@
 
 `hermes-continuation` creates structured continuation handoffs for long-running Hermes agent work. It is a sidecar CLI plus a thin Hermes plugin wrapper. The packet contract is the product: a local Markdown file for humans and a local JSON file for agents/tools.
 
-The MVP is intentionally conservative. `doctor` recommends, `prepare` previews, and `create` writes packet files. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch fresh agents, sync to cloud, provide a dashboard, or perform hidden writes.
+The MVP is intentionally conservative. `doctor` recommends, `prepare` previews, `create` writes packet files, and `watch` runs a one-shot read-only advisory check through the existing doctor/prepare helpers. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch fresh agents, sync to cloud, provide a dashboard, run a daemon by default, or perform hidden writes.
 
 ## When to use it
 
@@ -14,7 +14,7 @@ Use `hermes-continuation` when:
 - you want the next agent to see concrete repository state, verification gates, blockers, and boundaries;
 - you need a copy-paste resume prompt that is backed by a structured packet.
 
-Do not use it as a secret vault, transcript archive, cloud sync system, or automatic session manager.
+Do not use it as a secret vault, transcript archive, cloud sync system, background monitor, or automatic session manager.
 
 ## What a handoff contains
 
@@ -133,6 +133,42 @@ Boundary in plain language:
 
 Both commands support `--json` when a machine-readable recommendation/preview envelope is needed.
 
+## One-shot watch advisory
+
+`hermes-handoff watch` is implemented as a one-shot CLI command for advisory auto-trigger checks. It observes explicit local signals once, calls the existing doctor/prepare helpers, prints advice or a preview, and exits.
+
+Example:
+
+```bash
+hermes-handoff watch \
+  --repo . \
+  --goal "Finish dashboard QA" \
+  --next "Run build and browser smoke" \
+  --tool-calls 8 \
+  --elapsed-minutes 45 \
+  --dirty-threshold 1 \
+  --explicit-request
+```
+
+Machine-readable output:
+
+```bash
+hermes-handoff watch --repo . --goal "Finish QA" --next "Run smoke" --explicit-request --json
+```
+
+Supported watch flags include `--goal`, `--next`, `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, and `--json`.
+
+Watch boundaries:
+
+- read-only/advisory only: it never writes `.hermes/handoffs/` packet files and never creates that directory;
+- no hidden create path: it never calls `hermes-handoff create` or packet-writing helpers on the user's behalf;
+- no daemon by default: it evaluates once and exits;
+- missing `goal` or `next` degrades to `advise` instead of fabricating preview state;
+- `block` results suppress secret values and safe create commands;
+- no plugin/gateway `/handoff watch` exists yet; this MVP exposes watch only as CLI `hermes-handoff watch`.
+
+Plain-language side-effect boundary: `doctor` recommends, `prepare` previews, `create` writes, and `watch` observes/advises/previews through existing doctor/prepare helpers.
+
 ## Opt-in automatic task-state collection
 
 Automatic task-state collection is **off by default**. Enable it explicitly:
@@ -221,6 +257,8 @@ The tool schema for create requires:
 - `goal`
 - `next_task`
 
+There is no plugin tool or gateway/slash command for watch yet. Use CLI `hermes-handoff watch` for the one-shot advisory auto-trigger MVP.
+
 ## Slash command
 
 <!-- Compatibility alias: ## `/handoff` slash command -->
@@ -277,7 +315,7 @@ Resume with Markdown wrapper:
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
 ```
 
-Bare `/handoff` or `/handoff help` shows help instead of creating an underspecified packet. Plugin `auto_task_state` is optional and follows the same boundaries as CLI `--auto-task-state`.
+Bare `/handoff` or `/handoff help` shows help instead of creating an underspecified packet. Plugin `auto_task_state` is optional and follows the same boundaries as CLI `--auto-task-state`. No plugin/gateway `/handoff watch` subcommand is implemented yet.
 
 ## Output and artifacts policy
 
@@ -325,6 +363,7 @@ Rules:
 - The CLI/plugin redacts common token/API-key/password-like patterns to `[REDACTED]`.
 - Private-key blocks fail closed and should prevent handoff output.
 - `doctor` recommends and `prepare` previews; both are read-only and never write `.hermes/handoffs/` packet files.
+- `watch` is a one-shot read-only CLI advisory: it never writes `.hermes/handoffs/`, never invokes hidden create behavior, and does not run as a daemon by default.
 - `prepare` may show a safe create command, but the user must explicitly run `create` before any packet is written.
 - Safety blockers return `block`, suppress the safe create command, and do not print secret values.
 - The tool does not parse full Hermes transcripts automatically.
@@ -353,6 +392,7 @@ CLI help smoke:
 python -m hermes_continuation.cli --help
 python -m hermes_continuation.cli doctor --help
 python -m hermes_continuation.cli prepare --help
+python -m hermes_continuation.cli watch --help
 python -m hermes_continuation.cli create --help
 python -m hermes_continuation.cli resume --help
 ```
@@ -427,6 +467,10 @@ You should see `hermes-continuation`.
 
 Your Hermes build may not expose plugin slash-command registration. This is expected on older builds. The wrapper still registers `hermes_handoff_create` and `hermes_handoff_resume` tools.
 
+### `/handoff watch` is missing
+
+That is expected. Watch is currently implemented only as the one-shot CLI command `hermes-handoff watch`; no plugin/gateway `/handoff watch` command exists yet.
+
 ### Handoff files or generated artifacts appear in `git status`
 
 They are runtime artifacts. Remove or ignore generated files before committing:
@@ -462,8 +506,9 @@ Before opening a PR or asking someone to commit:
 - Keep changes scoped. Do not modify Hermes core for sidecar/plugin-wrapper work.
 - Do not commit runtime/generated artifacts: `.hermes/handoffs/`, `graphify-out/`, `_knowledge_base/`, caches, or `*.egg-info`.
 - Keep examples secret-safe and use obvious fake placeholders only.
-- Preserve product truth: this MVP recommends/previews/creates/resumes handoff packets; it does not auto-restart sessions, parse full transcripts, or perform hidden writes.
+- Preserve product truth: this MVP recommends/previews/creates/resumes handoff packets and offers one-shot CLI watch advice; it does not auto-restart sessions, parse full transcripts, run background watch daemons, or perform hidden writes.
 - Keep `doctor` and `prepare` read-only; they must not write `.hermes/handoffs/` packet files.
+- Keep `watch` read-only/advisory and CLI-only until a separate plugin/gateway watch task is approved.
 - Keep `create` requiring `--goal` and `--next` in the CLI.
 - Keep plugin `create` requiring `goal` and `next_task`.
 - Keep auto task-state collection opt-in only.

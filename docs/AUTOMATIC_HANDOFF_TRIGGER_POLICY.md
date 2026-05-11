@@ -2,7 +2,7 @@
 
 This document defines the Phase 3 design and current public behavior for proactive handoff recommendations in `hermes-continuation`.
 
-Phase 3A/3B/3C now provide read-only advisory and preview surfaces: `hermes-handoff doctor`, `hermes-handoff prepare`, plugin tool `hermes_handoff_prepare`, and `/handoff prepare ...` on compatible runtimes. Phase 3 still does **not** implement automatic session restart, Hermes core changes, transcript parsing, agent launching, cloud sync, dashboard behavior, or hidden writes.
+Phase 3A/3B/3C/3D now provide read-only advisory and preview surfaces: `hermes-handoff doctor`, `hermes-handoff prepare`, one-shot CLI `hermes-handoff watch`, plugin tool `hermes_handoff_prepare`, and `/handoff prepare ...` on compatible runtimes. Phase 3 still does **not** implement automatic session restart, Hermes core changes, transcript parsing, agent launching, cloud sync, dashboard behavior, background daemon monitoring, plugin/gateway `/handoff watch`, or hidden writes.
 
 ## Purpose
 
@@ -10,7 +10,7 @@ Long-running agent work often becomes risky when the context is large, the worki
 
 The first implementation should stay conservative:
 
-- surface a handoff recommendation with `doctor`;
+- surface a handoff recommendation with `doctor` or one-shot CLI `watch`;
 - explain why the recommendation appeared;
 - build a read-only preview with `prepare`;
 - show the exact command or tool arguments that would create the handoff when safe;
@@ -57,7 +57,7 @@ The default behavior for unknown or incomplete state is `advise`, not `prepare`.
 
 ## Candidate Signals
 
-A future trigger evaluator can combine these signals. Phase 3 only defines the policy; it does not implement the evaluator.
+The implemented one-shot CLI `watch` can combine explicit local signals with the existing doctor/prepare helpers. It is not a daemon and does not inspect private Hermes internals or full transcripts.
 
 ### Session and work signals
 
@@ -163,11 +163,15 @@ The CLI contract is split by side effect:
 ```bash
 hermes-handoff doctor --goal "..." --next "..."   # recommends only
 hermes-handoff prepare --goal "..." --next "..."  # read-only preview
+hermes-handoff watch --goal "..." --next "..." \
+  --tool-calls 8 --elapsed-minutes 45 --dirty-threshold 1 --explicit-request  # one-shot advisory/preview
 hermes-handoff create --goal "..." --next "..."   # writes packet files
 hermes-handoff resume path/to/handoff.json          # reads an existing packet
 ```
 
-Plain language: `doctor` recommends; `prepare` previews; `create` writes. `prepare` is read-only and never writes `.hermes/handoffs/` packet files. A prepare preview may show a safe create command, but it is only guidance; the user must explicitly run `create` to write.
+Plain language: `doctor` recommends; `prepare` previews; `create` writes; `watch` observes/advises/previews through existing doctor/prepare helpers. `prepare` and `watch` are read-only and never write `.hermes/handoffs/` packet files. A prepare preview may show a safe create command, but it is only guidance; the user must explicitly run `create` to write.
+
+`hermes-handoff watch` is implemented only as a one-shot CLI command. Supported watch flags include `--goal`, `--next`, `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, and `--json`. Missing `goal` or `next` degrades to `advise`; `block` suppresses secret values and safe create commands. Watch never calls hidden create behavior, never creates `.hermes/handoffs/`, and does not start a daemon by default.
 
 ## Plugin Wrapper Boundary
 
@@ -184,6 +188,8 @@ On compatible runtimes, the optional slash command supports `/handoff prepare ..
 - `register_tool` is required;
 - incompatible optional command registration must not prevent tool registration;
 - command-registration warnings must remain non-fatal.
+
+There is no plugin tool, gateway route, or slash command for watch yet. The implemented auto-trigger MVP is CLI-only: `hermes-handoff watch`.
 
 ## Safety Gates Before Any Future Automatic Write
 
@@ -206,7 +212,7 @@ If any required gate is missing, the system must degrade to `advise` or `block`.
 
 ## Non-goals
 
-Phase 3A/3B/3C intentionally do not implement:
+Phase 3A/3B/3C/3D intentionally do not implement:
 
 - Hermes core modifications;
 - automatic session restart;
@@ -216,7 +222,8 @@ Phase 3A/3B/3C intentionally do not implement:
 - cross-agent handoff packet standardization;
 - cloud sync;
 - dashboard UI;
-- background daemon monitoring.
+- background daemon monitoring;
+- plugin/gateway `/handoff watch`.
 
 These may be separate future projects, but they should not be smuggled into the first trigger policy.
 
@@ -251,7 +258,19 @@ Current implemented plugin surface:
 
 Both surfaces are read-only previews and preserve the no-core-change boundary.
 
-### Phase 3D: Optional approved write
+### Phase 3D: One-shot CLI watch advisory
+
+Current implemented CLI surface:
+
+```bash
+hermes-handoff watch --goal "..." --next "..." --tool-calls 8 --elapsed-minutes 45 --dirty-threshold 1 --explicit-request
+```
+
+`watch` evaluates once, reuses the existing doctor recommendation and prepare preview helpers, and exits. It may return `observe`, `advise`, `prepare`, or `block`, but it always reports `would_write: false` and never writes packet files. `--json` returns a machine-readable envelope for integrations.
+
+The MVP does not add a plugin/gateway `/handoff watch` command. Missing `goal` or `next` remains advisory, and safety blocks suppress secret values plus safe create commands.
+
+### Future optional approved write
 
 Only after the advisory and preview flows are stable, allow an explicit approved write path.
 

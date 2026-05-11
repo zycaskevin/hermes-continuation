@@ -16,6 +16,7 @@ from .redaction import RedactionBlocked
 from .render_markdown import render_markdown
 from .task_state import collect_task_state, merge_task_state
 from .validate import ValidationError, validate_packet
+from .watch import build_watch_result, format_watch_result
 
 
 def _add_repeatable(parser: argparse.ArgumentParser, name: str, help_text: str) -> None:
@@ -78,6 +79,26 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repeatable(prepare, "--not-run", "Not-run gate; may be repeated")
     prepare.add_argument("--json", action="store_true", help="Print a JSON prepare preview envelope")
     prepare.set_defaults(func=handle_prepare)
+
+    watch = subparsers.add_parser(
+        "watch",
+        help="One-shot read-only handoff watch advisory; never writes packet files (exits 2 if blocked)",
+    )
+    watch.add_argument("--repo", default=".", help="Repository path to inspect (default: current directory)")
+    watch.add_argument("--goal", default="", help="Current goal, used only for safe advisory/preview output")
+    watch.add_argument("--in-progress", default="", help="Current in-progress work, included only in safe advisory/preview output")
+    watch.add_argument("--next", default="", dest="next_task", help="Next recommended task, used only for safe advisory/preview output")
+    watch.add_argument("--auto-task-state", dest="auto_task_state", action="store_true", default=True, help="Read conservative task-state hints from repo docs (default)")
+    watch.add_argument("--no-auto-task-state", dest="auto_task_state", action="store_false", help="Do not read repo docs for task-state hints")
+    watch.add_argument("--tool-calls", type=int, default=None, help="Observed tool-call count for watch advisory thresholding")
+    watch.add_argument("--elapsed-minutes", type=int, default=None, help="Observed elapsed minutes for watch advisory thresholding")
+    watch.add_argument("--dirty-threshold", type=int, default=1, help="Changed-file count threshold for watch advisory strength (default: 1)")
+    _add_repeatable(watch, "--verified", "Verified gate; may be repeated")
+    _add_repeatable(watch, "--failing", "Failing gate; may be repeated")
+    _add_repeatable(watch, "--not-run", "Not-run gate; may be repeated")
+    watch.add_argument("--explicit-request", action="store_true", help="Treat this invocation as an explicit user handoff request")
+    watch.add_argument("--json", action="store_true", help="Print a JSON watch result envelope")
+    watch.set_defaults(func=handle_watch)
     return parser
 
 
@@ -197,6 +218,29 @@ def handle_prepare(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(format_prepare_preview(preview))
     return 2 if preview["level"] == "block" else 0
+
+
+def handle_watch(args: argparse.Namespace) -> int:
+    result = build_watch_result(
+        Path(args.repo).expanduser().resolve(),
+        goal=args.goal,
+        next_task=args.next_task,
+        in_progress=args.in_progress,
+        auto_task_state=args.auto_task_state,
+        tool_calls=args.tool_calls,
+        elapsed_minutes=args.elapsed_minutes,
+        dirty_threshold=args.dirty_threshold,
+        verified_gates=args.verified,
+        failing_gates=args.failing,
+        not_run_gates=args.not_run,
+        explicit_request=args.explicit_request,
+    )
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        sys.stdout.write(format_watch_result(result))
+    return 2 if result["level"] == "block" else 0
 
 
 def main(argv: list[str] | None = None) -> int:

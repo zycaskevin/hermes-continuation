@@ -20,10 +20,15 @@ REQUIRED_README_LINKS = [
 COMMON_USAGE_TOKENS = [
     "hermes-handoff doctor",
     "hermes-handoff prepare",
+    "hermes-handoff watch",
     "hermes-handoff create",
     "hermes-handoff resume",
     "--goal",
     "--next",
+    "--tool-calls",
+    "--elapsed-minutes",
+    "--dirty-threshold",
+    "--explicit-request",
     "--auto-task-state",
     "hermes_handoff_prepare",
     "hermes_handoff_create",
@@ -198,6 +203,17 @@ def test_public_docs_state_generated_artifact_exclusions():
         text = read_doc(relative)
         missing = [token for token in ARTIFACT_TOKENS if token not in text]
         assert missing == [], f"missing artifact exclusions in {relative}: {missing!r}"
+
+
+def test_public_docs_state_watch_is_cli_only_for_now():
+    expected = {
+        Path("README.md"): ("no plugin/gateway `/handoff watch`", "watch is CLI-only"),
+        Path("docs/USAGE.md"): ("no plugin/gateway `/handoff watch`", "CLI `hermes-handoff watch`"),
+        Path("docs/USAGE.zh-TW.md"): ("沒有 plugin/gateway `/handoff watch`", "CLI `hermes-handoff watch`"),
+        Path("docs/USAGE.zh-CN.md"): ("没有 plugin/gateway `/handoff watch`", "CLI `hermes-handoff watch`"),
+    }
+    for relative, tokens in expected.items():
+        assert_contains_all(read_doc(relative), f"watch CLI-only boundary in {relative}", tokens)
 
 
 def test_public_docs_state_redaction_and_private_key_safety():
