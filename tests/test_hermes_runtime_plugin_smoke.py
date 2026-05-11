@@ -17,8 +17,21 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_SRC = REPO_ROOT / "src"
-HERMES_SOURCE = Path("/home/zycas/.hermes/hermes-agent")
-HERMES_VENV_PYTHON = HERMES_SOURCE / "venv" / "bin" / "python3"
+DEFAULT_HERMES_SOURCE = Path("/home/zycas/.hermes/hermes-agent")
+
+
+def _resolve_hermes_source() -> Path:
+    override = os.environ.get("HERMES_AGENT_SOURCE", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return DEFAULT_HERMES_SOURCE
+
+
+def _resolve_hermes_python(hermes_source: Path) -> Path:
+    override = os.environ.get("HERMES_AGENT_PYTHON", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return hermes_source / "venv" / "bin" / "python3"
 
 
 RUNTIME_SMOKE_SCRIPT = r"""
@@ -75,19 +88,45 @@ info = continuation[0]
 assert info["source"] == "entrypoint", info
 assert info["enabled"] is True, info
 assert info["error"] is None, info
-assert info["tools"] == 2, info
+assert info["tools"] == 3, info
 assert info["commands"] == 1, info
 
 create_entry = registry.get_entry("hermes_handoff_create")
 resume_entry = registry.get_entry("hermes_handoff_resume")
+prepare_entry = registry.get_entry("hermes_handoff_prepare")
 assert create_entry is not None, "missing hermes_handoff_create registry entry"
 assert resume_entry is not None, "missing hermes_handoff_resume registry entry"
+assert prepare_entry is not None, "missing hermes_handoff_prepare registry entry"
 assert create_entry.toolset == "hermes_continuation"
 assert resume_entry.toolset == "hermes_continuation"
+assert prepare_entry.toolset == "hermes_continuation"
 assert callable(create_entry.handler)
 assert callable(resume_entry.handler)
+assert callable(prepare_entry.handler)
 assert create_entry.schema["parameters"]["required"] == ["goal", "next_task"]
 assert resume_entry.schema["parameters"]["required"] == ["handoff_json"]
+assert prepare_entry.schema["parameters"]["required"] == []
+prepare_properties = prepare_entry.schema["parameters"]["properties"]
+for field in (
+    "repo_path",
+    "goal",
+    "active_task",
+    "in_progress",
+    "next_task",
+    "next",
+    "auto_task_state",
+    "verified",
+    "failing",
+    "not_run",
+):
+    assert field in prepare_properties, prepare_entry.schema
+assert prepare_properties["repo_path"]["type"] == "string"
+assert prepare_properties["goal"]["type"] == "string"
+assert prepare_properties["next_task"]["type"] == "string"
+assert prepare_properties["auto_task_state"]["type"] == "boolean"
+assert prepare_properties["verified"]["type"] == "array"
+assert prepare_properties["failing"]["type"] == "array"
+assert prepare_properties["not_run"]["type"] == "array"
 
 commands = get_plugin_commands()
 assert "handoff" in commands, commands
@@ -108,10 +147,20 @@ print("SMOKE_OK", json.dumps(info, sort_keys=True))
 
 def test_hermes_runtime_discovers_and_loads_continuation_plugin(tmp_path: Path) -> None:
     """Verify entry-point discovery, runtime loading, tools, and /handoff help."""
-    if not HERMES_SOURCE.is_dir():
-        pytest.skip(f"Hermes source checkout not found: {HERMES_SOURCE}")
-    if not HERMES_VENV_PYTHON.is_file():
-        pytest.skip(f"Hermes venv Python not found: {HERMES_VENV_PYTHON}")
+    hermes_source = _resolve_hermes_source()
+    hermes_python = _resolve_hermes_python(hermes_source)
+
+    if not hermes_source.is_dir():
+        pytest.skip(
+            "Hermes source checkout not found: "
+            f"{hermes_source}. Set HERMES_AGENT_SOURCE to override "
+            f"(default: {DEFAULT_HERMES_SOURCE})."
+        )
+    if not hermes_python.is_file():
+        pytest.skip(
+            "Hermes runtime Python not found: "
+            f"{hermes_python}. Set HERMES_AGENT_PYTHON to override."
+        )
 
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()
@@ -133,11 +182,11 @@ def test_hermes_runtime_discovers_and_loads_continuation_plugin(tmp_path: Path) 
     env["HERMES_HOME"] = str(hermes_home)
     env["HOME"] = str(isolated_home)
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(REPO_SRC), str(HERMES_SOURCE), env.get("PYTHONPATH", "")]
+        [str(REPO_SRC), str(hermes_source), env.get("PYTHONPATH", "")]
     )
 
     completed = subprocess.run(
-        [str(HERMES_VENV_PYTHON), "-c", RUNTIME_SMOKE_SCRIPT, str(REPO_ROOT), str(HERMES_SOURCE)],
+        [str(hermes_python), "-c", RUNTIME_SMOKE_SCRIPT, str(REPO_ROOT), str(hermes_source)],
         cwd=str(REPO_ROOT),
         env=env,
         text=True,
@@ -148,7 +197,7 @@ def test_hermes_runtime_discovers_and_loads_continuation_plugin(tmp_path: Path) 
 
     assert completed.returncode == 0, (
         "Hermes runtime plugin smoke failed\n"
-        f"command: {HERMES_VENV_PYTHON} -c <script> {REPO_ROOT} {HERMES_SOURCE}\n"
+        f"command: {hermes_python} -c <script> {REPO_ROOT} {hermes_source}\n"
         f"stdout:\n{completed.stdout}\n"
         f"stderr:\n{completed.stderr}"
     )

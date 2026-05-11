@@ -2,7 +2,7 @@
 
 `hermes-continuation` creates structured continuation handoffs for long-running Hermes agent work. It is a sidecar CLI plus a thin Hermes plugin wrapper. The packet contract is the product: a local Markdown file for humans and a local JSON file for agents/tools.
 
-The MVP is intentionally conservative. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch fresh agents, sync to cloud, or provide a dashboard.
+The MVP is intentionally conservative. `doctor` recommends, `prepare` previews, and `create` writes packet files. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch fresh agents, sync to cloud, provide a dashboard, or perform hidden writes.
 
 ## When to use it
 
@@ -101,6 +101,38 @@ Useful options:
 - `--completed`, `--verified`, `--failing`, `--not-run`, `--blocker`, `--do-not-touch`: repeatable list fields.
 - `--in-progress`: current active work text.
 
+## Read-only doctor and prepare preview
+
+Use `doctor` when you want a recommendation without creating anything:
+
+```bash
+hermes-handoff doctor \
+  --repo . \
+  --goal "Finish dashboard QA" \
+  --next "Run build and browser smoke test"
+```
+
+Use `prepare` when you want a structured preview before deciding to write a packet:
+
+```bash
+hermes-handoff prepare \
+  --repo . \
+  --goal "Finish dashboard QA" \
+  --next "Run build and browser smoke test"
+```
+
+Boundary in plain language:
+
+- `doctor` recommends whether a handoff is useful.
+- `prepare` previews the proposed handoff state and may show a safe `hermes-handoff create ...` command.
+- `create` is the only CLI command here that writes Markdown/JSON packet files under `.hermes/handoffs/` by default.
+- `prepare` is read-only: it never creates `.hermes/handoffs/` directories or packet files, even when it prints a safe create command.
+- A safe create command is guidance, not consent. The user must explicitly run `hermes-handoff create ...` to write a packet.
+- Missing `goal` or `next` degrades to `advise` rather than fabricating state.
+- Safety blockers return `block`, suppress the safe create command, and do not print secret values.
+
+Both commands support `--json` when a machine-readable recommendation/preview envelope is needed.
+
 ## Opt-in automatic task-state collection
 
 Automatic task-state collection is **off by default**. Enable it explicitly:
@@ -178,8 +210,9 @@ plugins:
 
 Restart the Hermes CLI/gateway after install or config changes. Plugin discovery is cached inside a running Hermes process.
 
-When loaded, the wrapper registers two tools:
+When loaded, the wrapper registers three tools:
 
+- `hermes_handoff_prepare`: build a read-only prepare preview; it never writes packet files and has no required fields.
 - `hermes_handoff_create`: create a Markdown + JSON handoff packet.
 - `hermes_handoff_resume`: extract the resume prompt from a handoff JSON.
 
@@ -199,6 +232,20 @@ Help:
 ```text
 /handoff help
 ```
+
+Prepare a read-only preview with JSON:
+
+```text
+/handoff prepare {"repo_path":".","goal":"Finish dashboard QA","next_task":"Run build and browser smoke","auto_task_state":true}
+```
+
+Prepare with shell-style key/value arguments:
+
+```text
+/handoff prepare repo_path=. goal="Finish dashboard QA" next_task="Run build and browser smoke" auto_task_state=true
+```
+
+`/handoff prepare ...` is available only on compatible Hermes runtimes that expose plugin slash-command registration. It calls `hermes_handoff_prepare`, never writes `.hermes/handoffs/` packet files, and may show a safe create command that the user must explicitly run through `create` to write.
 
 Create with JSON, recommended for predictability:
 
@@ -251,6 +298,22 @@ Do not commit generated/runtime artifacts:
 
 If you run smoke commands, prefer a temporary repository or `--output-dir` pointing outside your working tree.
 
+## Runtime smoke compatibility
+
+`tests/test_hermes_runtime_plugin_smoke.py` intentionally stays portable for contributors:
+
+- it skips cleanly when Hermes runtime prerequisites are missing;
+- default fallback source path is `/home/zycas/.hermes/hermes-agent`;
+- default fallback interpreter path is `/home/zycas/.hermes/hermes-agent/venv/bin/python3`.
+
+You can override both defaults with environment variables:
+
+```bash
+HERMES_AGENT_SOURCE="/path/to/hermes-agent" \
+HERMES_AGENT_PYTHON="/path/to/hermes-agent/venv/bin/python3" \
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
+
 ## Safety and redaction
 
 Handoff content may be copied into another agent or shared with a teammate. Keep it secret-safe.
@@ -261,6 +324,9 @@ Rules:
 - Use obvious placeholders such as `[REDACTED]`, `sk-test-[REDACTED]`, or `example-token-[REDACTED]`.
 - The CLI/plugin redacts common token/API-key/password-like patterns to `[REDACTED]`.
 - Private-key blocks fail closed and should prevent handoff output.
+- `doctor` recommends and `prepare` previews; both are read-only and never write `.hermes/handoffs/` packet files.
+- `prepare` may show a safe create command, but the user must explicitly run `create` before any packet is written.
+- Safety blockers return `block`, suppress the safe create command, and do not print secret values.
 - The tool does not parse full Hermes transcripts automatically.
 - Auto task-state collection is explicit opt-in and limited to conservative repo-local Markdown files.
 - Review generated handoff packets before sending them anywhere.
@@ -285,6 +351,8 @@ CLI help smoke:
 
 ```bash
 python -m hermes_continuation.cli --help
+python -m hermes_continuation.cli doctor --help
+python -m hermes_continuation.cli prepare --help
 python -m hermes_continuation.cli create --help
 python -m hermes_continuation.cli resume --help
 ```
@@ -394,7 +462,8 @@ Before opening a PR or asking someone to commit:
 - Keep changes scoped. Do not modify Hermes core for sidecar/plugin-wrapper work.
 - Do not commit runtime/generated artifacts: `.hermes/handoffs/`, `graphify-out/`, `_knowledge_base/`, caches, or `*.egg-info`.
 - Keep examples secret-safe and use obvious fake placeholders only.
-- Preserve product truth: this MVP creates/resumes handoff packets; it does not auto-restart sessions or parse full transcripts.
+- Preserve product truth: this MVP recommends/previews/creates/resumes handoff packets; it does not auto-restart sessions, parse full transcripts, or perform hidden writes.
+- Keep `doctor` and `prepare` read-only; they must not write `.hermes/handoffs/` packet files.
 - Keep `create` requiring `--goal` and `--next` in the CLI.
 - Keep plugin `create` requiring `goal` and `next_task`.
 - Keep auto task-state collection opt-in only.

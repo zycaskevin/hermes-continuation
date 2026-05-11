@@ -10,6 +10,7 @@ from typing import Any
 
 from .git_state import collect_git_state
 from .packet import build_packet
+from .prepare import build_prepare_preview, format_prepare_preview
 from .redaction import RedactionBlocked
 from .render_markdown import render_markdown
 from .task_state import collect_task_state, merge_task_state
@@ -18,22 +19,26 @@ from .validate import ValidationError, validate_packet
 TOOLSET = "hermes_continuation"
 CREATE_TOOL = "hermes_handoff_create"
 RESUME_TOOL = "hermes_handoff_resume"
+PREPARE_TOOL = "hermes_handoff_prepare"
 HANDOFF_COMMAND = "handoff"
 
 
-_HANDOFF_ARGS_HINT = "create <json>|resume <handoff.json>"
+_HANDOFF_ARGS_HINT = "create <json|key=value>|resume <handoff.json>|prepare <json|key=value>"
 
 _HANDOFF_HELP = """Hermes handoff command usage:
 
 /handoff create {"repo_path":".","goal":"Current goal","next_task":"Next step","auto_task_state":true}
 /handoff create repo_path=. goal="Current goal" next_task="Next step" auto_task_state=true
 /handoff {"repo_path":".","goal":"Current goal","next_task":"Next step"}
+/handoff prepare {"repo_path":".","goal":"Current goal","next_task":"Next step","auto_task_state":true}
+/handoff prepare repo_path=. goal="Current goal" next_task="Next step" auto_task_state=true
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
 
 Notes:
 - Bare /handoff shows this help instead of creating an underspecified packet.
 - Create requires goal and next_task, matching hermes_handoff_create.
+- Prepare is read-only; it previews advisory state and never writes packet files.
 - auto_task_state is opt-in and conservatively reads repo-local docs only.
 - The plugin command is sidecar-only and does not modify Hermes core.
 """.strip()
@@ -112,6 +117,15 @@ def _parse_create_command_args(text: str) -> dict[str, Any]:
     return _parse_key_value_args(payload)
 
 
+def _parse_prepare_command_args(text: str) -> dict[str, Any]:
+    payload = text.strip()
+    if not payload:
+        raise ValueError("prepare requires JSON or key=value arguments")
+    if payload.startswith("{"):
+        return _parse_json_object(payload)
+    return _parse_key_value_args(payload)
+
+
 def _parse_resume_command_args(text: str) -> dict[str, Any]:
     payload = text.strip()
     if not payload:
@@ -147,7 +161,7 @@ def _split_handoff_command(raw_args: str) -> tuple[str, str]:
     verb = first.strip().lower()
     if verb in {"help", "--help", "-h"}:
         return "help", ""
-    if verb in {"create", "resume"}:
+    if verb in {"create", "resume", "prepare"}:
         return verb, rest.strip() if sep else ""
     if text.startswith("{") or "=" in first:
         return "create", text
@@ -177,6 +191,15 @@ def _format_resume_command_result(result: dict[str, Any]) -> str:
     if not result.get("success"):
         return f"Handoff resume failed: {result.get('error', 'unknown error')}"
     return str(result.get("output") or result.get("resume_prompt") or "")
+
+
+def _format_prepare_command_result(result: dict[str, Any]) -> str:
+    if not result.get("success"):
+        return f"Handoff prepare failed: {result.get('error', 'unknown error')}"
+    preview = result.get("preview")
+    if not isinstance(preview, dict):
+        return "Handoff prepare failed: handler returned missing preview"
+    return format_prepare_preview(preview)
 
 
 def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
@@ -240,6 +263,26 @@ def hermes_handoff_create(args: dict[str, Any], **_: Any) -> str:
         return _error(exc)
 
 
+def hermes_handoff_prepare(args: dict[str, Any], **_: Any) -> str:
+    """Build a read-only handoff prepare preview and return a JSON result envelope."""
+    try:
+        repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
+        auto_task_state = _as_bool(args["auto_task_state"]) if "auto_task_state" in args else True
+        preview = build_prepare_preview(
+            repo_path,
+            goal=str(args.get("goal") or "").strip(),
+            next_task=str(args.get("next_task") or args.get("next") or "").strip(),
+            in_progress=str(args.get("active_task") or args.get("in_progress") or "").strip(),
+            auto_task_state=auto_task_state,
+            verified_gates=_as_list(args.get("verified")),
+            failing_gates=_as_list(args.get("failing")),
+            not_run_gates=_as_list(args.get("not_run")),
+        )
+        return _json_response({"success": True, "preview": preview})
+    except (OSError, ValidationError, ValueError) as exc:
+        return _error(exc)
+
+
 def hermes_handoff_resume(args: dict[str, Any], **_: Any) -> str:
     """Read a handoff JSON and return its resume prompt."""
     try:
@@ -277,6 +320,9 @@ def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
             if not result.get("success") and not payload.strip():
                 return f"{_format_create_command_result(result)}\n\n{_HANDOFF_HELP}"
             return _format_create_command_result(result)
+        if verb == "prepare":
+            result = _load_handler_result(hermes_handoff_prepare(_parse_prepare_command_args(payload)))
+            return _format_prepare_command_result(result)
         if verb == "resume":
             result = _load_handler_result(hermes_handoff_resume(_parse_resume_command_args(payload)))
             return _format_resume_command_result(result)
@@ -321,10 +367,35 @@ _RESUME_SCHEMA: dict[str, Any] = {
     },
 }
 
+_PREPARE_SCHEMA: dict[str, Any] = {
+    "name": PREPARE_TOOL,
+    "description": "Read-only preview for a Hermes continuation handoff create command.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "repo_path": {"type": "string", "description": "Repository path to inspect. Defaults to the current directory."},
+            "goal": {"type": "string", "description": "Current goal to preview; missing values degrade to advisory output."},
+            "active_task": {"type": "string", "description": "Current in-progress work, if any."},
+            "in_progress": {"type": "string", "description": "Alias for active_task."},
+            "next_task": {"type": "string", "description": "Next recommended task to preview."},
+            "next": {"type": "string", "description": "Alias for next_task."},
+            "auto_task_state": {"type": "boolean", "description": "Read conservative task-state hints from repo docs. Defaults to true."},
+            "verified": {"type": "array", "items": {"type": "string"}},
+            "failing": {"type": "array", "items": {"type": "string"}},
+            "not_run": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [],
+    },
+}
+
 
 def register(ctx: Any) -> None:
     """Register Hermes continuation tools and optional command."""
-    ctx.register_tool(
+    register_tool = getattr(ctx, "register_tool", None)
+    if not callable(register_tool):
+        raise RuntimeError("Hermes continuation plugin requires callable ctx.register_tool")
+
+    register_tool(
         name=CREATE_TOOL,
         toolset=TOOLSET,
         schema=_CREATE_SCHEMA,
@@ -332,7 +403,7 @@ def register(ctx: Any) -> None:
         description="Create a structured Hermes handoff packet.",
         emoji="🧾",
     )
-    ctx.register_tool(
+    register_tool(
         name=RESUME_TOOL,
         toolset=TOOLSET,
         schema=_RESUME_SCHEMA,
@@ -340,12 +411,34 @@ def register(ctx: Any) -> None:
         description="Extract a fresh-session resume prompt from a handoff packet.",
         emoji="🔁",
     )
+    register_tool(
+        name=PREPARE_TOOL,
+        toolset=TOOLSET,
+        schema=_PREPARE_SCHEMA,
+        handler=hermes_handoff_prepare,
+        description="Preview a handoff create command without writing files.",
+        emoji="🧭",
+    )
 
     register_command = getattr(ctx, "register_command", None)
     if callable(register_command):
-        register_command(
-            HANDOFF_COMMAND,
-            handler=hermes_handoff_command,
-            description="Create or resume Hermes continuation handoffs.",
-            args_hint=_HANDOFF_ARGS_HINT,
-        )
+        try:
+            register_command(
+                HANDOFF_COMMAND,
+                handler=hermes_handoff_command,
+                description="Create, prepare, or resume Hermes continuation handoffs.",
+                args_hint=_HANDOFF_ARGS_HINT,
+            )
+        except TypeError as exc:
+            warning = (
+                "Skipped optional /handoff command registration: register_command "
+                f"appears to use an incompatible API ({exc})"
+            )
+            warnings = getattr(ctx, "_hermes_continuation_registration_warnings", None)
+            if not isinstance(warnings, list):
+                warnings = []
+            warnings.append(warning)
+            try:
+                setattr(ctx, "_hermes_continuation_registration_warnings", warnings)
+            except (AttributeError, TypeError):
+                pass

@@ -8,8 +8,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .doctor import evaluate_handoff_recommendation, format_recommendation
 from .git_state import collect_git_state
 from .packet import build_packet
+from .prepare import build_prepare_preview, format_prepare_preview
 from .redaction import RedactionBlocked
 from .render_markdown import render_markdown
 from .task_state import collect_task_state, merge_task_state
@@ -43,6 +45,39 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("handoff_json", help="Path to an existing handoff JSON file")
     resume.add_argument("--markdown", action="store_true", help="Wrap the prompt in a concise Markdown section")
     resume.set_defaults(func=handle_resume)
+
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Read-only handoff recommendation doctor (exits 2 if safety blocks preparation)",
+    )
+    doctor.add_argument("--repo", default=".", help="Repository path to inspect (default: current directory)")
+    doctor.add_argument("--goal", default="", help="Current goal, used only to suggest a safe create command")
+    doctor.add_argument("--in-progress", default="", help="Current in-progress work, included only in a safe suggested command")
+    doctor.add_argument("--next", default="", dest="next_task", help="Next recommended task, used only to suggest a safe create command")
+    doctor.add_argument("--auto-task-state", dest="auto_task_state", action="store_true", default=True, help="Read conservative task-state hints from repo docs (default)")
+    doctor.add_argument("--no-auto-task-state", dest="auto_task_state", action="store_false", help="Do not read repo docs for task-state hints")
+    _add_repeatable(doctor, "--verified", "Verified gate; may be repeated")
+    _add_repeatable(doctor, "--failing", "Failing gate; may be repeated")
+    _add_repeatable(doctor, "--not-run", "Not-run gate; may be repeated")
+    doctor.add_argument("--explicit-request", action="store_true", help="Treat this invocation as an explicit user handoff request")
+    doctor.add_argument("--json", action="store_true", help="Print a JSON recommendation envelope")
+    doctor.set_defaults(func=handle_doctor)
+
+    prepare = subparsers.add_parser(
+        "prepare",
+        help="Read-only handoff create preview; never writes packet files (exits 2 if blocked)",
+    )
+    prepare.add_argument("--repo", default=".", help="Repository path to inspect (default: current directory)")
+    prepare.add_argument("--goal", default="", help="Current goal to preview; missing values degrade to advise")
+    prepare.add_argument("--in-progress", default="", help="Current in-progress work, included only in a safe suggested command")
+    prepare.add_argument("--next", default="", dest="next_task", help="Next recommended task to preview; missing values degrade to advise")
+    prepare.add_argument("--auto-task-state", dest="auto_task_state", action="store_true", default=True, help="Read conservative task-state hints from repo docs (default)")
+    prepare.add_argument("--no-auto-task-state", dest="auto_task_state", action="store_false", help="Do not read repo docs for task-state hints")
+    _add_repeatable(prepare, "--verified", "Verified gate; may be repeated")
+    _add_repeatable(prepare, "--failing", "Failing gate; may be repeated")
+    _add_repeatable(prepare, "--not-run", "Not-run gate; may be repeated")
+    prepare.add_argument("--json", action="store_true", help="Print a JSON prepare preview envelope")
+    prepare.set_defaults(func=handle_prepare)
     return parser
 
 
@@ -122,6 +157,46 @@ def handle_resume(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(prompt)
     return 0
+
+
+def handle_doctor(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser().resolve()
+    result = evaluate_handoff_recommendation(
+        repo_path,
+        goal=args.goal,
+        next_task=args.next_task,
+        in_progress=args.in_progress,
+        auto_task_state=args.auto_task_state,
+        verified_gates=args.verified,
+        failing_gates=args.failing,
+        not_run_gates=args.not_run,
+        explicit_request=args.explicit_request,
+    )
+
+    if args.json:
+        print(json.dumps({"success": True, "recommendation": result.to_dict()}, ensure_ascii=False, indent=2))
+    else:
+        sys.stdout.write(format_recommendation(result))
+    return 2 if result.level == "block" else 0
+
+
+def handle_prepare(args: argparse.Namespace) -> int:
+    preview = build_prepare_preview(
+        Path(args.repo).expanduser().resolve(),
+        goal=args.goal,
+        next_task=args.next_task,
+        in_progress=args.in_progress,
+        auto_task_state=args.auto_task_state,
+        verified_gates=args.verified,
+        failing_gates=args.failing,
+        not_run_gates=args.not_run,
+    )
+
+    if args.json:
+        print(json.dumps({"success": True, "preview": preview}, ensure_ascii=False, indent=2))
+    else:
+        sys.stdout.write(format_prepare_preview(preview))
+    return 2 if preview["level"] == "block" else 0
 
 
 def main(argv: list[str] | None = None) -> int:

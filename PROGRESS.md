@@ -2,11 +2,11 @@
 
 ## Current Goal
 
-Complete the public GitHub readiness pass for the Hermes continuation sidecar/plugin MVP:
+Design the Phase 3 automatic handoff trigger policy for the Hermes continuation sidecar/plugin:
 
-1. Strengthen the test suite so CLI, plugin wrapper, packet validation, redaction, rendering, git-state collection, automatic task-state collection, and Hermes runtime smoke behavior are covered by explicit regression tests.
-2. Update the GitHub-facing usage documentation in **Traditional Chinese, Simplified Chinese, and English** so users can install, enable, run, verify, troubleshoot, and safely operate the sidecar/plugin without reading prior chat history.
-3. Keep the implementation as a sidecar/plugin-wrapper capability; do not modify Hermes core, do not commit generated runtime artifacts, and keep all handoff documentation secret-safe.
+1. Define when Hermes should merely remind the user to create a handoff versus when it may generate one automatically.
+2. Keep the first design as an advisory sidecar/plugin capability; do not modify Hermes core in this phase.
+3. Preserve user control, redaction safety, and generated-artifact boundaries before any automatic write happens.
 
 ## Public GitHub Readiness Plan
 
@@ -37,6 +37,218 @@ Still out of scope:
 - Automatic session restart.
 - Full Hermes transcript parsing or context-risk detection.
 - Committing generated handoff packets or Graphify output.
+
+## Phase 1 Public Repo Hardening Plan
+
+Implement now (small-scoped edits only):
+
+1. Align `pyproject.toml` public metadata with repository licensing and maintainer identity.
+2. Make runtime smoke test path selection portable through explicit env overrides.
+3. Add a minimal CI workflow for Python 3.11/3.12 install, test, compile, secret scan, and whitespace checks.
+4. Add `CHANGELOG.md` for `0.1.0` with Phase 1 readiness notes.
+5. Update public docs to clarify runtime-smoke compatibility and env overrides.
+
+Do not modify:
+
+- `graphify-out/`
+- `_knowledge_base/`
+- `.hermes/handoffs/`
+- caches
+- `*.egg-info`
+
+Phase 1 acceptance gates:
+
+- `pyproject.toml` license metadata states Apache-2.0 and author reflects Arthur Liao.
+- `tests/test_hermes_runtime_plugin_smoke.py` supports:
+  - `HERMES_AGENT_SOURCE` for Hermes source checkout path
+  - `HERMES_AGENT_PYTHON` for Hermes interpreter path
+  - preserved fallback: `/home/zycas/.hermes/hermes-agent`
+  - clean, actionable skip messages when runtime is unavailable
+- `.github/workflows/ci.yml` exists and runs:
+  - `actions/checkout`
+  - `actions/setup-python` matrix: 3.11, 3.12
+  - `python -m pip install -e .`
+  - `pytest`
+  - compile checks (`compileall` and `py_compile`)
+  - lightweight secret scan across committable source/docs/tests/config
+  - `git diff --check`
+- Runtime Hermes smoke test remains optional/portable (skip is acceptable when Hermes runtime is absent).
+- `CHANGELOG.md`, `README.md`, `docs/USAGE*.md`, and `docs/PLUGIN_WRAPPER.md` document compatibility and env overrides.
+
+## Phase 2 Runtime Compatibility Plan
+
+Implement now (small-scoped compatibility hardening only):
+
+1. Inspect the current plugin wrapper registration path against Hermes runtime plugin APIs.
+2. Make plugin API capability detection explicit and conservative:
+   - `register_tool` is required for the plugin wrapper to be useful.
+   - `/handoff` command registration remains optional.
+   - Missing command registration must not prevent the two handoff tools from loading.
+   - Incompatible command-registration signatures should degrade gracefully instead of crashing plugin load.
+3. Add boundary regression tests for runtimes that:
+   - expose full tool + command APIs;
+   - expose tool APIs only;
+   - expose command APIs with an incompatible signature;
+   - lack the required tool registration API.
+4. Preserve the current tool contracts and JSON result envelopes; do not rename tools, toolset, command, or success fields.
+5. Keep this as a sidecar/plugin-wrapper compatibility pass; do not modify Hermes core.
+
+Phase 2 acceptance gates:
+
+- `register(ctx)` still registers `hermes_handoff_create` and `hermes_handoff_resume` on compatible Hermes plugin contexts.
+- `/handoff` registers only when the runtime command API is available and compatible.
+- Command API incompatibility is recorded on the plugin context when possible and does not crash tool registration.
+- Missing required `register_tool` fails with an explicit error instead of silently pretending the plugin loaded.
+- Existing CLI create/resume behavior remains unchanged.
+- `python -m pytest -q` passes.
+- `python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py` passes or is cleanly skipped when Hermes runtime is unavailable.
+- `python -m py_compile src/hermes_continuation/*.py tests/*.py` passes.
+- Source secret scan reports 0 findings in committable source/docs/tests/config files.
+- `git diff --check` passes.
+- Graphify maintenance hook is executed after code/doc changes.
+- Commit is scoped and excludes `_knowledge_base/`, `graphify-out/`, `.hermes/handoffs/`, cache directories, and package build artifacts.
+
+Still out of scope for Phase 2:
+
+- Hermes core modifications.
+- Automatic session restart or context-risk detection.
+- Cross-agent packet standardization.
+- Expanding auto task-state beyond the existing conservative repo-doc collector.
+- Committing generated handoff packets or Graphify output.
+
+## Phase 3A Advisory Trigger Evaluator Implementation Plan
+
+Implement now (read-only advisory helper only):
+
+1. Add a small trigger evaluator that inspects available local sidecar signals without mutating repository or Hermes session state.
+2. Add `hermes-handoff doctor` as the primary CLI entry point for handoff recommendations.
+3. Align recommendation levels with `docs/AUTOMATIC_HANDOFF_TRIGGER_POLICY.md`:
+   - `observe`: collect signals below threshold; no noisy prompt.
+   - `advise`: recommend handoff and explain why.
+   - `prepare`: show exact create-command guidance only when enough explicit safe state is available.
+   - `block`: report safety blockers and avoid packet preparation.
+4. Keep Phase 3A strictly read-only:
+   - no Hermes core modification;
+   - no automatic handoff packet writes;
+   - no automatic session restart;
+   - no fresh-agent launch;
+   - no full transcript parsing.
+5. Add focused tests for evaluator levels and CLI doctor behavior.
+6. Update docs only where needed to describe the new doctor command and read-only boundary.
+
+Phase 3A acceptance gates:
+
+- `hermes-handoff doctor` prints a human-readable recommendation without creating `.hermes/handoffs/` output.
+- Evaluator covers `observe`, `advise`, `prepare`, and `block` decision paths.
+- Missing or incomplete state degrades to `advise`, not fabricated `prepare`.
+- Safety blockers override convenience signals and return `block` without printing secret values.
+- Existing `create`, `resume`, plugin tool, and `/handoff` behavior remain compatible.
+- `python -m pytest -q tests/test_public_docs.py` passes.
+- `python -m pytest -q` passes.
+- `python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py` passes or cleanly skips when runtime is unavailable.
+- Source secret scan reports 0 findings in committable source/docs/tests/config files.
+- `git diff --check` passes.
+- Graphify maintenance hook is executed after code/doc changes.
+- Commit is scoped and excludes `_knowledge_base/`, `graphify-out/`, `.hermes/handoffs/`, cache directories, and package build artifacts.
+
+Still out of scope for Phase 3A:
+
+- Hermes core modifications.
+- Automatic session restart or fresh-agent launch.
+- Automatic handoff packet writes without explicit user action.
+- Full Hermes transcript parsing.
+- Cloud sync, dashboard, or background daemon monitoring.
+- Expanding packet schema beyond what doctor needs to recommend next action.
+
+## Phase 3B / 3C Execution Plan
+
+Planning completed:
+
+- Canonical execution plan: `docs/PHASE_3B_3C_EXECUTION_PLAN.md`.
+- Phase 3B target: add `hermes-handoff prepare` as a read-only prepare-only preview flow.
+- Phase 3C target: expose advisory/prepare behavior through the Hermes plugin wrapper without Hermes core changes.
+- Dependency order: prepare helper → CLI prepare command → plugin prepare tool → optional `/handoff doctor/prepare` command surface → docs/gates/scoped commit.
+- Required boundary: `doctor` recommends, `prepare` previews, `create` writes; no hidden packet writes, no auto-restart, no transcript parsing, no agent launch.
+- Implementation used `subagent-driven-development`; parent session re-ran live tests and inspected file diffs before commit.
+
+Implementation completed in this phase:
+
+- `src/hermes_continuation/prepare.py` adds `build_prepare_preview()` and `format_prepare_preview()`.
+- `hermes-handoff prepare` emits human + JSON previews and is read-only.
+- `hermes_handoff_prepare` plugin tool exposes the same preview envelope to Hermes.
+- `/handoff prepare ...` is available on runtimes with compatible plugin slash-command support.
+- Blocked previews suppress raw repo/output paths and safe create commands so secret-like path content is not printed.
+- Custom preview `output_dir` input is ignored to keep the preview aligned with the actual safe create command.
+- Public docs now explain `doctor` vs `prepare` vs `create` and the negative MVP boundaries.
+
+Phase 3B/3C acceptance gates:
+
+- `hermes-handoff prepare` exists and emits human + JSON preview output.
+- Prepare never creates `.hermes/handoffs/` packet files.
+- Missing goal/next task degrades to `advise`; safety blockers return `block` without printing secrets.
+- Plugin registers existing create/resume tools unchanged and adds prepare advisory surface compatibly.
+- Public docs explain `doctor` vs `prepare` vs `create` and preserve negative MVP boundaries.
+- Full pytest, public docs tests, runtime plugin smoke, secret scan, `git diff --check`, and Graphify rebuild are run before commit.
+- Commit is scoped and excludes `graphify-out/`, `.hermes/handoffs/`, caches, generated artifacts, and local root drafts.
+
+## Phase 3 Automatic Handoff Trigger Policy Design History
+
+Historical design note (now partially implemented by Phase 3A/3B/3C sidecar/plugin surfaces):
+
+1. Define trigger levels for long-running Hermes work:
+   - `observe`: collect signals only, no user-facing prompt.
+   - `advise`: remind the user to create a handoff.
+   - `prepare`: draft a handoff command/packet preview, but require explicit user action before writing.
+   - `block`: refuse automatic handoff creation when safety checks fail.
+2. Define conservative signals that can be evaluated outside Hermes core:
+   - task duration and tool-call count;
+   - context compression or handoff-risk warnings surfaced by Hermes/session metadata when available;
+   - dirty git state and uncommitted tracked changes;
+   - failing/not-run verification gates;
+   - explicit user request such as `handoff`, `continue later`, or `fresh session`.
+3. Keep the first trigger mechanism advisory and sidecar/plugin-wrapper based:
+   - no Hermes core modification;
+   - no automatic session restart;
+   - no full transcript parsing;
+   - no hidden write to `.hermes/handoffs/` without user intent;
+   - no cloud sync, dashboard, or cross-agent orchestration.
+4. Specify UX surfaces for CLI, plugin tool, and `/handoff` command:
+   - show why a handoff is recommended;
+   - show the exact command or tool arguments that would create it;
+   - allow the user to run the command explicitly;
+   - preserve manual `--goal` and `--next` as authoritative.
+5. Define safety gates before any future automatic write:
+   - secret redaction scan passes;
+   - private-key blocks fail closed;
+   - generated/runtime directories remain excluded;
+   - packet preview is local-only and secret-safe;
+   - missing required state degrades to an advisory reminder, not a fabricated packet.
+
+Historical design deliverables:
+
+- Add `docs/AUTOMATIC_HANDOFF_TRIGGER_POLICY.md` as the canonical design note.
+- Link the design note from `README.md` as an additional reference document.
+- Keep examples secret-safe and use `[REDACTED]` for any sensitive placeholder.
+- Do not modify CLI/plugin behavior in Phase 3 unless a later task explicitly asks for implementation.
+
+Historical Phase 3 docs gates:
+
+- Design doc explicitly covers trigger levels, signals, UX, safety gates, non-goals, and future implementation phases.
+- Design doc states that Phase 3 is advisory design only and does not implement automatic session restart.
+- Public docs keep negative MVP boundaries visible: no Hermes core modification, no auto-restart sessions, no full transcript parsing, no agent launching, no cloud sync/dashboard.
+- Source secret scan reports 0 findings in committable source/docs/tests/config files.
+- `python -m pytest -q tests/test_public_docs.py` passes.
+- `git diff --check` passes.
+- Graphify maintenance hook is executed after doc changes.
+- Commit is scoped and excludes `_knowledge_base/`, `graphify-out/`, `.hermes/handoffs/`, cache directories, and package build artifacts.
+
+Still out of scope for this project phase:
+
+- Modifying Hermes core or Hermes session lifecycle.
+- Automatic session restart or agent launch.
+- Full Hermes transcript parsing.
+- Writing handoff packets without explicit user intent.
+- Cross-agent handoff packet standardization.
 
 ## Source of Truth
 

@@ -18,13 +18,17 @@ REQUIRED_README_LINKS = [
 ]
 
 COMMON_USAGE_TOKENS = [
+    "hermes-handoff doctor",
+    "hermes-handoff prepare",
     "hermes-handoff create",
     "hermes-handoff resume",
     "--goal",
     "--next",
     "--auto-task-state",
+    "hermes_handoff_prepare",
     "hermes_handoff_create",
     "hermes_handoff_resume",
+    "/handoff prepare",
     "/handoff",
     "auto_task_state",
     "[REDACTED]",

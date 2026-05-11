@@ -9,7 +9,7 @@ The wrapper is intentionally thin:
 - Hermes discovers the package through the `hermes_agent.plugins` entry point.
 - `register(ctx)` registers plugin tools with Hermes' normal tool registry.
 - When Hermes exposes `ctx.register_command`, `register(ctx)` also registers a plugin slash command named `/handoff`.
-- Tool handlers call the existing sidecar modules for git state, packet building, validation, redaction, and Markdown rendering.
+- Tool handlers call the existing sidecar modules for git state, packet building, validation, redaction, Markdown rendering, advisory recommendations, and read-only prepare previews.
 - The wrapper returns JSON strings because Hermes tool handlers expect JSON-compatible string output.
 
 ## Install / Enable
@@ -46,6 +46,35 @@ plugins:
 Restart the Hermes CLI/gateway after install or config changes so runtime plugin discovery refreshes.
 
 ## Registered Tools
+
+### `hermes_handoff_prepare`
+
+Builds a read-only prepare preview. It never writes `.hermes/handoffs/` packet files, even when the preview includes a safe create command.
+
+Main parameters:
+
+- `repo_path`: repository path to inspect. Defaults to `.`.
+- `goal`: current goal to preview. Optional; missing values degrade to `advise`.
+- `next_task` / `next`: next recommended task to preview. Optional; missing values degrade to `advise`.
+- `active_task` / `in_progress`: current in-progress work.
+- `auto_task_state`: optional boolean. Defaults to true for prepare, meaning it reads conservative task-state hints from repo docs unless disabled.
+- `verified`, `failing`, `not_run`: optional string lists.
+
+Success response:
+
+```json
+{
+  "success": true,
+  "preview": {
+    "level": "prepare",
+    "would_write": false,
+    "safety_status": "safe",
+    "safe_create_command": "hermes-handoff create ..."
+  }
+}
+```
+
+If safety blockers are detected, the preview level is `block`, `safety_status` is `blocked`, `safe_create_command` is `null`, and secret values are suppressed.
 
 ### `hermes_handoff_create`
 
@@ -97,7 +126,7 @@ Success response:
 When running on a Hermes build with plugin command support, the wrapper registers:
 
 ```text
-/handoff [create <args>|resume <handoff.json>|help]
+/handoff [create <args>|prepare <args>|resume <handoff.json>|help]
 ```
 
 The local Hermes plugin API used for this MVP is:
@@ -106,12 +135,28 @@ The local Hermes plugin API used for this MVP is:
 ctx.register_command(
     "handoff",
     handler=hermes_handoff_command,
-    description="Create or resume Hermes continuation handoffs.",
-    args_hint="create <json>|resume <handoff.json>",
+    description="Create, prepare, or resume Hermes continuation handoffs.",
+    args_hint="create <json>|prepare <json>|resume <handoff.json>",
 )
 ```
 
-The command handler receives the trailing text as `raw_args: str` and returns a display string. If `ctx.register_command` is not present, the plugin still registers the two tools and skips command registration.
+The command handler receives the trailing text as `raw_args: str` and returns a display string. If `ctx.register_command` is not present, the plugin still registers the three tools and skips command registration.
+
+### Prepare through `/handoff`
+
+Use JSON for the most predictable read-only preview:
+
+```text
+/handoff prepare {"repo_path":".","goal":"Fix dashboard health page","next_task":"Run build and browser QA","auto_task_state":true}
+```
+
+Simple shell-style key/value arguments are also accepted:
+
+```text
+/handoff prepare repo_path=. goal="Fix dashboard health page" next_task="Run build and browser QA" auto_task_state=true
+```
+
+Prepare uses the `hermes_handoff_prepare` handler. It previews the proposed state, reports `would_write: false`, and never creates `.hermes/handoffs/` packet files. It may display a safe `hermes-handoff create ...` command, but that command is only guidance; the user must explicitly run `/handoff create ...`, invoke `hermes_handoff_create`, or run `hermes-handoff create ...` to write a packet. Missing required create state degrades to `advise`. Safety blockers return `block`, suppress the safe create command, and do not print secret values.
 
 ### Create through `/handoff`
 
@@ -156,7 +201,11 @@ Resume uses the existing `hermes_handoff_resume` handler and returns the stored 
 - The wrapper does not modify Hermes core.
 - The wrapper does not start or restart Hermes sessions.
 - The wrapper does not parse full transcripts automatically.
-- Automatic task-state collection is explicit opt-in and reads only conservative repo-local docs.
+- The wrapper does not perform hidden writes: `doctor` recommends, `prepare` previews, and `create` writes only when explicitly invoked.
+- `hermes_handoff_prepare` and `/handoff prepare ...` are read-only and never write `.hermes/handoffs/` packet files.
+- Prepare previews may show a safe create command, but the user must explicitly run create to write.
+- Safety blockers return `block`, suppress safe create commands, and do not print secret values.
+- Automatic task-state collection is explicit opt-in for create and conservative for prepare/doctor; it reads only repo-local docs.
 - The `/handoff` command is plugin-only and gracefully disappears on Hermes versions without `register_command`.
 - The wrapper does not bypass the existing redaction/private-key fail-closed behavior.
 - Runtime handoff artifacts remain under `.hermes/handoffs/` by default and should not be committed.
@@ -186,6 +235,7 @@ python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
 What it verifies:
 
 - Uses `/home/zycas/.hermes/hermes-agent/venv/bin/python3` in a subprocess when that local Hermes checkout exists; otherwise pytest skips so the repository stays portable.
+- Supports `HERMES_AGENT_SOURCE` and `HERMES_AGENT_PYTHON` env overrides for non-`/home/zycas` environments while preserving the same default local fallback.
 - Sets `PYTHONPATH` to this repo's `src/` plus `/home/zycas/.hermes/hermes-agent` so Hermes runtime APIs and this editable source are imported together.
 - Uses a temporary `HERMES_HOME` containing only:
 
@@ -199,12 +249,20 @@ What it verifies:
 - Does **not** read or modify `~/.hermes/config.yaml`.
 - Confirms the `hermes_agent.plugins` entry point is visible to the Hermes interpreter and resolves to `hermes_continuation.plugin`.
 - Calls Hermes runtime APIs: `discover_plugins`, `get_plugin_manager`, `get_plugin_commands`, `get_plugin_command_handler`, and `resolve_plugin_command_result`.
-- Asserts the runtime lists `hermes-continuation` as an enabled entry-point plugin with no error, 2 tools, and 1 command.
-- Asserts the real `tools.registry.registry` contains `hermes_handoff_create` and `hermes_handoff_resume` under the `hermes_continuation` toolset with the expected required schema fields.
+- Asserts the runtime lists `hermes-continuation` as an enabled entry-point plugin with no error, 3 tools, and 1 command.
+- Asserts the real `tools.registry.registry` contains `hermes_handoff_prepare`, `hermes_handoff_create`, and `hermes_handoff_resume` under the `hermes_continuation` toolset with the expected schema fields.
 - Resolves `/handoff help` through the runtime command registry and checks that help contains `/handoff create` plus `Bare /handoff shows this help`.
 - Avoids creating runtime handoff packets; it only invokes `/handoff help`.
 
 Expected success output includes `SMOKE_OK` in the subprocess stdout.
+
+Override example:
+
+```bash
+HERMES_AGENT_SOURCE="/path/to/hermes-agent" \
+HERMES_AGENT_PYTHON="/path/to/hermes-agent/venv/bin/python3" \
+python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py
+```
 
 ## Troubleshooting
 
@@ -241,7 +299,7 @@ Also check that `plugins.disabled` does not contain `hermes-continuation`. Resta
 
 ### `/handoff` missing
 
-Confirm the plugin is enabled and loaded first. If the tools are present but `/handoff` is missing, the Hermes build may be too old or may not expose `PluginContext.register_command`. In that case the wrapper still registers the two tools and intentionally skips command registration for backward compatibility.
+Confirm the plugin is enabled and loaded first. If the tools are present but `/handoff` is missing, the Hermes build may be too old or may not expose `PluginContext.register_command`. In that case the wrapper still registers `hermes_handoff_prepare`, `hermes_handoff_create`, and `hermes_handoff_resume` tools and intentionally skips command registration for backward compatibility.
 
 ### Entry point not visible to Hermes interpreter
 
@@ -263,12 +321,14 @@ Plugin discovery is cached in a running Hermes process. After install, enable/di
 
 ## Acceptance Gates
 
-- `register(ctx)` registers both tools with OpenAI-style schemas.
+- `register(ctx)` registers prepare/create/resume tools with OpenAI-style schemas.
 - Real Hermes runtime smoke passes: `python -m pytest -q tests/test_hermes_runtime_plugin_smoke.py`.
 - On Hermes builds with `register_command`, `register(ctx)` registers `/handoff` with a raw-text command handler.
 - On contexts without `register_command`, `register(ctx)` still succeeds and registers the tools.
+- `hermes_handoff_prepare` returns a read-only preview, never writes packet files, and suppresses safe create commands for `block` results.
 - `hermes_handoff_create` writes both Markdown and JSON in a temporary repo smoke test.
 - `hermes_handoff_resume` returns the same prompt from the generated JSON.
+- `/handoff prepare ...` previews through the prepare handler without writing files.
 - `/handoff create ...` writes through the existing create handler, and `/handoff resume ...` reads through the existing resume handler.
 - Invalid/missing handoff JSON returns `success: false`.
 - Full project tests pass.
