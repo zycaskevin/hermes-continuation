@@ -5,7 +5,7 @@
 - **No active implementation task is currently open.**
 - Repository: `/home/zycas/hermes-continuation`
 - Branch: `main`
-- Sync state: `main` is synced to `origin/main` at latest merged commit `30dd05d feat: add advisory and prepare handoff previews`.
+- Sync state: `main` is synced to `origin/main` after the latest pushed documentation/dogfood update.
 - GitHub PR status: PR #1 is merged; open PRs: none.
 - This document is now current-status-first so future agents do not reopen completed historical plans.
 
@@ -71,10 +71,27 @@ Only these are future tasks; completed historical phase plans should not be reop
 
 ### P1 — Real dogfood in Arthur's Hermes runtime/gateway
 
-- Enable the plugin in Arthur's real Hermes runtime/gateway environment.
-- Run `/handoff prepare` during real work.
-- Inspect Feishu and Telegram readability of the preview output.
-- Keep this as observation/dogfood unless a specific follow-up implementation task is opened.
+Status: completed for CLI and local Hermes runtime plugin path on 2026-05-11.
+
+Verified:
+
+- Hermes v0.13.0 is installed at `/home/zycas/.local/bin/hermes`.
+- `~/.hermes/config.yaml` enables `hermes-continuation`.
+- The Hermes venv can import this checkout's `hermes_continuation` package.
+- CLI dogfood passed:
+  - `hermes-handoff prepare` human output returned `prepare`.
+  - JSON output returned `preview.level == "prepare"` and `would_write == false`.
+  - Missing `next` degraded to `advise` with no safe create command.
+  - No `.hermes/handoffs/` directory was created in the dogfood repo.
+- Hermes runtime plugin dogfood passed:
+  - Real plugin runtime loaded `hermes-continuation` with 3 tools and 1 command.
+  - Registry tool `hermes_handoff_prepare` returned `preview.level == "prepare"` and `would_write == false`.
+  - Plugin command handler `/handoff prepare ...` returned human-readable preview text.
+  - No handoff artifacts were written.
+
+Remaining optional observation:
+
+- Inspect Feishu/Telegram message readability during a natural future task. Runtime command execution is verified; visual copy/readability can be refined later if the output feels too technical.
 
 ### P2 — Release/tag flow
 
@@ -97,6 +114,15 @@ Only these are future tasks; completed historical phase plans should not be reop
 - Preserve useful historical context only as past-tense archive material.
 
 ## Latest Verified Gates
+
+Latest dogfood verification recorded on 2026-05-11:
+
+- CLI `hermes-handoff prepare` human and JSON output passed in a temp git repo.
+- CLI missing-`next` case degraded to `advise` with no safe create command.
+- Hermes runtime plugin loaded `hermes-continuation` with 3 tools and 1 command.
+- Runtime registry tool `hermes_handoff_prepare` passed.
+- Runtime plugin command handler `/handoff prepare ...` passed.
+- Dogfood checks created no `.hermes/handoffs/` artifacts.
 
 Latest merged verification recorded for `30dd05d feat: add advisory and prepare handoff previews`:
 
