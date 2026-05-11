@@ -102,7 +102,10 @@ Remaining optional observation:
 
 ### P3 — Optional watch/advisory auto-trigger design and implementation
 
-- Design optional `watch` or advisory auto-trigger behavior.
+Status: planning completed; implementation has not started.
+
+- Implementation plan created: `docs/WATCH_ADVISORY_TRIGGER_PLAN.md`.
+- Recommended start is one-shot CLI `hermes-handoff watch`, no plugin/gateway command until the CLI contract is stable.
 - Keep the policy advisory-first.
 - Preserve explicit-write-only behavior: automated checks may recommend or preview, but must not silently create packets.
 - Continue to avoid Hermes core session lifecycle changes unless a separate approved task changes the boundary.
