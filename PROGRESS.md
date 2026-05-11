@@ -169,7 +169,17 @@ Planning completed:
 - Phase 3C target: expose advisory/prepare behavior through the Hermes plugin wrapper without Hermes core changes.
 - Dependency order: prepare helper → CLI prepare command → plugin prepare tool → optional `/handoff doctor/prepare` command surface → docs/gates/scoped commit.
 - Required boundary: `doctor` recommends, `prepare` previews, `create` writes; no hidden packet writes, no auto-restart, no transcript parsing, no agent launch.
-- Implementation should use `subagent-driven-development` and verify actual file changes/tests rather than trusting subagent summaries.
+- Implementation used `subagent-driven-development`; parent session re-ran live tests and inspected file diffs before commit.
+
+Implementation completed in this phase:
+
+- `src/hermes_continuation/prepare.py` adds `build_prepare_preview()` and `format_prepare_preview()`.
+- `hermes-handoff prepare` emits human + JSON previews and is read-only.
+- `hermes_handoff_prepare` plugin tool exposes the same preview envelope to Hermes.
+- `/handoff prepare ...` is available on runtimes with compatible plugin slash-command support.
+- Blocked previews suppress raw repo/output paths and safe create commands so secret-like path content is not printed.
+- Custom preview `output_dir` input is ignored to keep the preview aligned with the actual safe create command.
+- Public docs now explain `doctor` vs `prepare` vs `create` and the negative MVP boundaries.
 
 Phase 3B/3C acceptance gates:
 
@@ -181,9 +191,9 @@ Phase 3B/3C acceptance gates:
 - Full pytest, public docs tests, runtime plugin smoke, secret scan, `git diff --check`, and Graphify rebuild are run before commit.
 - Commit is scoped and excludes `graphify-out/`, `.hermes/handoffs/`, caches, generated artifacts, and local root drafts.
 
-## Phase 3 Automatic Handoff Trigger Policy Design Plan
+## Phase 3 Automatic Handoff Trigger Policy Design History
 
-Design now (documentation first, no runtime implementation in this phase):
+Historical design note (now partially implemented by Phase 3A/3B/3C sidecar/plugin surfaces):
 
 1. Define trigger levels for long-running Hermes work:
    - `observe`: collect signals only, no user-facing prompt.
@@ -214,14 +224,14 @@ Design now (documentation first, no runtime implementation in this phase):
    - packet preview is local-only and secret-safe;
    - missing required state degrades to an advisory reminder, not a fabricated packet.
 
-Phase 3 design deliverables:
+Historical design deliverables:
 
 - Add `docs/AUTOMATIC_HANDOFF_TRIGGER_POLICY.md` as the canonical design note.
 - Link the design note from `README.md` as an additional reference document.
 - Keep examples secret-safe and use `[REDACTED]` for any sensitive placeholder.
 - Do not modify CLI/plugin behavior in Phase 3 unless a later task explicitly asks for implementation.
 
-Phase 3 docs gates:
+Historical Phase 3 docs gates:
 
 - Design doc explicitly covers trigger levels, signals, UX, safety gates, non-goals, and future implementation phases.
 - Design doc states that Phase 3 is advisory design only and does not implement automatic session restart.
@@ -232,9 +242,8 @@ Phase 3 docs gates:
 - Graphify maintenance hook is executed after doc changes.
 - Commit is scoped and excludes `_knowledge_base/`, `graphify-out/`, `.hermes/handoffs/`, cache directories, and package build artifacts.
 
-Still out of scope for Phase 3:
+Still out of scope for this project phase:
 
-- Implementing trigger evaluation code.
 - Modifying Hermes core or Hermes session lifecycle.
 - Automatic session restart or agent launch.
 - Full Hermes transcript parsing.

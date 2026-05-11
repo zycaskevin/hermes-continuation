@@ -64,13 +64,16 @@ def test_register_adds_create_resume_tools_and_handoff_command():
     plugin.register(ctx)
 
     names = [item["name"] for item in ctx.tools]
-    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL]
     assert all(item["toolset"] == plugin.TOOLSET for item in ctx.tools)
     assert ctx.tools[0]["schema"]["parameters"]["required"] == ["goal", "next_task"]
     assert "auto_task_state" in ctx.tools[0]["schema"]["parameters"]["properties"]
     assert ctx.tools[1]["schema"]["parameters"]["required"] == ["handoff_json"]
+    assert ctx.tools[2]["schema"]["parameters"]["required"] == []
+    assert "next" in ctx.tools[2]["schema"]["parameters"]["properties"]
     assert callable(ctx.tools[0]["handler"])
     assert callable(ctx.tools[1]["handler"])
+    assert callable(ctx.tools[2]["handler"])
 
     assert len(ctx.commands) == 1
     command = ctx.commands[0]
@@ -78,6 +81,7 @@ def test_register_adds_create_resume_tools_and_handoff_command():
     assert command["handler"] is plugin.hermes_handoff_command
     assert "create" in command["args_hint"]
     assert "resume" in command["args_hint"]
+    assert "prepare" in command["args_hint"]
 
 
 def test_register_without_command_api_still_registers_tools():
@@ -85,7 +89,7 @@ def test_register_without_command_api_still_registers_tools():
     plugin.register(ctx)
 
     names = [item["name"] for item in ctx.tools]
-    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL]
 
 
 def test_register_with_incompatible_command_api_keeps_tools_and_records_warning():
@@ -93,7 +97,7 @@ def test_register_with_incompatible_command_api_keeps_tools_and_records_warning(
     plugin.register(ctx)
 
     names = [item["name"] for item in ctx.tools]
-    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL]
     assert ctx.commands == []
     warnings = ctx._hermes_continuation_registration_warnings
     assert isinstance(warnings, list)
@@ -248,6 +252,75 @@ def test_plugin_create_invalid_boolean_fails_without_writing(tmp_path):
     assert not output_dir.exists()
 
 
+def test_plugin_prepare_success_is_read_only(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    prepare_result = json.loads(
+        plugin.hermes_handoff_prepare(
+            {
+                "repo_path": str(repo),
+                "goal": "Preview plugin prepare",
+                "active_task": "wiring command UX",
+                "next": "Run targeted tests",
+                "auto_task_state": False,
+                "verified": ["unit smoke"],
+            }
+        )
+    )
+
+    assert prepare_result["success"] is True
+    preview = prepare_result["preview"]
+    assert preview["level"] == "prepare"
+    assert preview["would_write"] is False
+    assert preview["proposed_goal"] == "Preview plugin prepare"
+    assert preview["proposed_next_task"] == "Run targeted tests"
+    assert preview["verification_status"] == "verified"
+    assert preview["safe_create_command"] is not None
+    assert not (repo / ".hermes" / "handoffs").exists()
+
+
+def test_plugin_prepare_missing_next_degrades_to_advise_without_safe_create(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    prepare_result = json.loads(
+        plugin.hermes_handoff_prepare({"repo_path": str(repo), "goal": "Known goal", "auto_task_state": False})
+    )
+
+    assert prepare_result["success"] is True
+    preview = prepare_result["preview"]
+    assert preview["level"] == "advise"
+    assert "missing_required_prepare_input" in preview["signals"]
+    assert preview["proposed_goal"] == "Known goal"
+    assert preview["proposed_next_task"] is None
+    assert preview["safe_create_command"] is None
+    assert preview["would_write"] is False
+    assert not (repo / ".hermes" / "handoffs").exists()
+
+
+def test_plugin_prepare_invalid_boolean_fails_without_writing(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    prepare_result = json.loads(
+        plugin.hermes_handoff_prepare(
+            {
+                "repo_path": str(repo),
+                "goal": "Invalid bool",
+                "next_task": "Report error",
+                "auto_task_state": "definitely",
+            }
+        )
+    )
+
+    assert prepare_result["success"] is False
+    assert "invalid boolean value" in prepare_result["error"]
+    assert not (repo / ".hermes" / "handoffs").exists()
+
+
 def test_handoff_command_create_and_resume_roundtrip(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -290,9 +363,40 @@ def test_handoff_command_implicit_create_key_value_args(tmp_path):
     assert len(list(output_dir.glob("*-handoff.json"))) == 1
 
 
+def test_handoff_command_prepare_human_preview_is_read_only(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    output = plugin.hermes_handoff_command(
+        f'prepare repo_path={repo} goal="Command prepare" next_task="Inspect preview" auto_task_state=false verified=unit'
+    )
+
+    assert "Handoff prepare preview: prepare" in output
+    assert "Read-only preview" in output
+    assert "Proposed goal: Command prepare" in output
+    assert "Proposed next_task: Inspect preview" in output
+    assert "Safe create command" in output
+    assert not (repo / ".hermes" / "handoffs").exists()
+
+
+def test_handoff_command_prepare_missing_next_is_advise_without_safe_create(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+
+    output = plugin.hermes_handoff_command(f'prepare repo_path={repo} goal="Command advise" auto_task_state=false')
+
+    assert "Handoff prepare preview: advise" in output
+    assert "missing_required_prepare_input" in output
+    assert "Safe create command" not in output
+    assert not (repo / ".hermes" / "handoffs").exists()
+
+
 def test_handoff_command_help_and_parse_errors():
     help_output = plugin.hermes_handoff_command("")
     assert "/handoff create" in help_output
+    assert "/handoff prepare" in help_output
     assert "Bare /handoff shows this help" in help_output
 
     explicit_help_output = plugin.hermes_handoff_command("help")

@@ -88,19 +88,45 @@ info = continuation[0]
 assert info["source"] == "entrypoint", info
 assert info["enabled"] is True, info
 assert info["error"] is None, info
-assert info["tools"] == 2, info
+assert info["tools"] == 3, info
 assert info["commands"] == 1, info
 
 create_entry = registry.get_entry("hermes_handoff_create")
 resume_entry = registry.get_entry("hermes_handoff_resume")
+prepare_entry = registry.get_entry("hermes_handoff_prepare")
 assert create_entry is not None, "missing hermes_handoff_create registry entry"
 assert resume_entry is not None, "missing hermes_handoff_resume registry entry"
+assert prepare_entry is not None, "missing hermes_handoff_prepare registry entry"
 assert create_entry.toolset == "hermes_continuation"
 assert resume_entry.toolset == "hermes_continuation"
+assert prepare_entry.toolset == "hermes_continuation"
 assert callable(create_entry.handler)
 assert callable(resume_entry.handler)
+assert callable(prepare_entry.handler)
 assert create_entry.schema["parameters"]["required"] == ["goal", "next_task"]
 assert resume_entry.schema["parameters"]["required"] == ["handoff_json"]
+assert prepare_entry.schema["parameters"]["required"] == []
+prepare_properties = prepare_entry.schema["parameters"]["properties"]
+for field in (
+    "repo_path",
+    "goal",
+    "active_task",
+    "in_progress",
+    "next_task",
+    "next",
+    "auto_task_state",
+    "verified",
+    "failing",
+    "not_run",
+):
+    assert field in prepare_properties, prepare_entry.schema
+assert prepare_properties["repo_path"]["type"] == "string"
+assert prepare_properties["goal"]["type"] == "string"
+assert prepare_properties["next_task"]["type"] == "string"
+assert prepare_properties["auto_task_state"]["type"] == "boolean"
+assert prepare_properties["verified"]["type"] == "array"
+assert prepare_properties["failing"]["type"] == "array"
+assert prepare_properties["not_run"]["type"] == "array"
 
 commands = get_plugin_commands()
 assert "handoff" in commands, commands

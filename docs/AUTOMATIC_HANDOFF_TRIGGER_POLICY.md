@@ -1,8 +1,8 @@
 # Automatic Handoff Trigger Policy
 
-This document defines the Phase 3 design for proactive handoff recommendations in `hermes-continuation`.
+This document defines the Phase 3 design and current public behavior for proactive handoff recommendations in `hermes-continuation`.
 
-Phase 3 is a design-only phase. It does **not** implement automatic session restart, Hermes core changes, transcript parsing, agent launching, cloud sync, or dashboard behavior.
+Phase 3A/3B/3C now provide read-only advisory and preview surfaces: `hermes-handoff doctor`, `hermes-handoff prepare`, plugin tool `hermes_handoff_prepare`, and `/handoff prepare ...` on compatible runtimes. Phase 3 still does **not** implement automatic session restart, Hermes core changes, transcript parsing, agent launching, cloud sync, dashboard behavior, or hidden writes.
 
 ## Purpose
 
@@ -10,9 +10,10 @@ Long-running agent work often becomes risky when the context is large, the worki
 
 The first implementation should stay conservative:
 
-- surface a handoff recommendation;
+- surface a handoff recommendation with `doctor`;
 - explain why the recommendation appeared;
-- show the exact command or tool arguments that would create the handoff;
+- build a read-only preview with `prepare`;
+- show the exact command or tool arguments that would create the handoff when safe;
 - require explicit user action before writing a new handoff packet.
 
 In plain language: Hermes may say, “This is a good time to save a handoff,” but it should not secretly create one or restart the session.
@@ -28,7 +29,8 @@ In plain language: Hermes may say, “This is a good time to save a handoff,” 
    - It must not invent goals, next tasks, test results, git status, or session history.
 
 3. **Secret-safe by default**
-   - Any future packet preview must pass the existing redaction and private-key blocking behavior.
+   - Packet previews must pass the existing redaction and private-key blocking behavior.
+   - If safety blockers are found, the result level is `block`, safe create commands are suppressed, and secret values are not printed.
    - Sensitive examples must use `[REDACTED]`.
 
 4. **Sidecar/plugin-wrapper boundary**
@@ -131,7 +133,7 @@ The example uses placeholder text because real goals may contain private project
 
 ### Prepare-level preview
 
-A prepare-level preview may show a structured summary, but it must not write a packet until the user explicitly approves or runs the command.
+A prepare-level preview may show a structured summary, but it must not write a packet until the user explicitly approves or runs the command. In current CLI behavior, `hermes-handoff prepare` is always read-only: it never creates `.hermes/handoffs/` directories or handoff packet files. It may show a safe `hermes-handoff create ...` command, but the user must explicitly run `create` to write.
 
 Required preview fields:
 
@@ -152,29 +154,32 @@ Handoff packet not prepared because the safety scan found sensitive material.
 Remove or redact the sensitive content, then run the handoff command again.
 ```
 
-It should not print the secret value.
+It should not print the secret value, and it should not include a safe create command.
 
 ## CLI Boundary
 
-The existing CLI remains authoritative for actual packet creation:
+The CLI contract is split by side effect:
 
 ```bash
-hermes-handoff create --goal "..." --next "..."
-hermes-handoff resume path/to/handoff.json
+hermes-handoff doctor --goal "..." --next "..."   # recommends only
+hermes-handoff prepare --goal "..." --next "..."  # read-only preview
+hermes-handoff create --goal "..." --next "..."   # writes packet files
+hermes-handoff resume path/to/handoff.json          # reads an existing packet
 ```
 
-A future trigger helper may print a suggested command, but it should not change the current CLI contract without a separate implementation phase.
+Plain language: `doctor` recommends; `prepare` previews; `create` writes. `prepare` is read-only and never writes `.hermes/handoffs/` packet files. A prepare preview may show a safe create command, but it is only guidance; the user must explicitly run `create` to write.
 
 ## Plugin Wrapper Boundary
 
-The plugin wrapper may expose recommendation behavior in the future, but Phase 3 does not change the current tool contracts.
+The plugin wrapper exposes recommendation/preview behavior without changing Hermes core.
 
-Current required tools remain:
+Current tools:
 
-- `hermes_handoff_create`
-- `hermes_handoff_resume`
+- `hermes_handoff_prepare` — read-only preview; never writes packet files.
+- `hermes_handoff_create` — explicit write path for Markdown + JSON packets.
+- `hermes_handoff_resume` — read existing handoff JSON.
 
-The optional `/handoff` command may eventually show recommendations, but it must preserve the Phase 2 compatibility rule:
+On compatible runtimes, the optional slash command supports `/handoff prepare ...` as a UX shim over `hermes_handoff_prepare`. The command must preserve the Phase 2 compatibility rule:
 
 - `register_tool` is required;
 - incompatible optional command registration must not prevent tool registration;
@@ -201,7 +206,7 @@ If any required gate is missing, the system must degrade to `advise` or `block`.
 
 ## Non-goals
 
-Phase 3 intentionally does not design or implement:
+Phase 3A/3B/3C intentionally do not implement:
 
 - Hermes core modifications;
 - automatic session restart;
@@ -215,35 +220,36 @@ Phase 3 intentionally does not design or implement:
 
 These may be separate future projects, but they should not be smuggled into the first trigger policy.
 
-## Future Implementation Phases
+## Implementation Phases
 
 ### Phase 3A: Advisory command
 
-Add a read-only command that evaluates available local signals and prints a recommendation.
-
-Possible shape:
+Current implemented shape:
 
 ```bash
 hermes-handoff doctor
 ```
 
-Output should be human-readable and secret-safe.
+Output is human-readable by default, JSON with `--json`, and secret-safe. It recommends but does not write.
 
 ### Phase 3B: Prepare-only preview
 
-Add a command that builds a preview from explicit inputs without writing a packet.
-
-Possible shape:
+Current implemented shape:
 
 ```bash
 hermes-handoff prepare --goal "..." --next "..."
 ```
 
-The preview should be validatable and redacted, but not persisted unless the user runs `create`.
+The preview is validatable and redacted, but not persisted unless the user runs `create`. It never writes `.hermes/handoffs/` packet files.
 
 ### Phase 3C: Plugin advisory surface
 
-Expose the same recommendation logic through the Hermes plugin wrapper, without depending on Hermes core internals.
+Current implemented plugin surface:
+
+- `hermes_handoff_prepare` tool;
+- `/handoff prepare ...` on Hermes runtimes with compatible plugin slash-command support.
+
+Both surfaces are read-only previews and preserve the no-core-change boundary.
 
 ### Phase 3D: Optional approved write
 

@@ -2,7 +2,7 @@
 
 `hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work.
 
-The current MVP is intentionally narrow: it writes a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, or provide a dashboard.
+The current MVP is intentionally narrow: `doctor` recommends, `prepare` previews, and `create` writes a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or perform hidden writes.
 
 ## Usage guides
 
@@ -77,6 +77,15 @@ hermes-handoff create --repo . --goal "Finish QA" --next "Run browser smoke" --a
 
 `--auto-task-state` conservatively reads repo-local Markdown docs (`PROGRESS.md`, `README.md`, and direct `docs/*.md`) and skips generated/runtime directories. Manual values are preserved, and manual `--next` remains authoritative.
 
+Read-only advisory and preview commands are available before writing a packet:
+
+```bash
+hermes-handoff doctor --repo . --goal "Finish QA" --next "Run browser smoke"
+hermes-handoff prepare --repo . --goal "Finish QA" --next "Run browser smoke"
+```
+
+Plain-language boundary: `doctor` recommends whether a handoff is useful; `prepare` builds a read-only preview and may show a safe `hermes-handoff create ...` command; only `create` writes `.hermes/handoffs/` packet files. If safety blockers are found, the level is `block`, secret values are suppressed, and no create command is shown. To write a packet after a preview, the user must explicitly run the shown `create` command or invoke create through the plugin.
+
 ## Hermes plugin quick start
 
 The package exposes this entry point:
@@ -99,19 +108,24 @@ After restarting Hermes, builds with plugin slash-command support may expose:
 
 ```text
 /handoff help
+/handoff prepare {"repo_path":".","goal":"Finish dashboard QA","next_task":"Run build and browser smoke","auto_task_state":true}
+/handoff prepare repo_path=. goal="Finish dashboard QA" next_task="Run build and browser smoke" auto_task_state=true
 /handoff create {"repo_path":".","goal":"Finish dashboard QA","next_task":"Run build and browser smoke","auto_task_state":true}
 /handoff create repo_path=. goal="Finish dashboard QA" next_task="Run build and browser smoke" auto_task_state=true
 /handoff {"repo_path":".","goal":"Finish dashboard QA","next_task":"Run build and browser smoke"}
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-The plugin also registers two tools: `hermes_handoff_create` and `hermes_handoff_resume`. Plugin `create` requires `goal` and `next_task`.
+The plugin also registers three tools: `hermes_handoff_prepare`, `hermes_handoff_create`, and `hermes_handoff_resume`. Plugin `prepare` is read-only and has no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` exposes the same preview behavior through the optional slash command.
 
 ## Safety boundaries
 
 - Do not put raw secrets in goals, task notes, verification notes, or handoff files.
 - Common token/API-key/password-like values are redacted to `[REDACTED]`.
 - Private-key blocks fail closed instead of writing a handoff.
+- `doctor` and `prepare` are read-only; they never write `.hermes/handoffs/` packet files.
+- `prepare` may show a safe create command, but the user must explicitly run `create` before any packet is written.
+- Safety blockers return `block`, suppress safe create commands, and do not print secret values.
 - No full Hermes transcript parsing is performed.
 - Auto task-state collection is opt-in and limited to conservative repo-local Markdown files.
 - Generated/runtime artifacts such as `.hermes/handoffs/`, `graphify-out/`, `_knowledge_base/`, `.pytest_cache/`, `__pycache__/`, and `*.egg-info` should not be committed.
