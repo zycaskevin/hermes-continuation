@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 from datetime import datetime, timezone
 from pathlib import Path
@@ -243,6 +244,43 @@ def _format_doctor_command_result(result: dict[str, Any]) -> str:
     return format_recommendation(rec)
 
 
+def _resolve_chat_repo(source_platform: str | None, source_chat_id: str | None) -> str | None:
+    """Resolve platform+chat_id to a repo path via config, or return None.
+
+    Reads from ``~/.hermes/config.yaml`` under ``plugins.config.hermes-continuation.chat_context``:
+
+    .. code-block:: yaml
+
+        plugins:
+          config:
+            hermes-continuation:
+              chat_context:
+                "gateway:chat_id_1": /path/to/repo-a
+                "feishu:oc_...": /path/to/repo-b
+    """
+    if not source_platform or not source_chat_id:
+        return None
+    if source_platform in ("cli", "tui"):
+        return None  # CLI/TUI sessions have no chat context
+    try:
+        import yaml as _yaml
+        config_path = Path.home() / ".hermes" / "config.yaml"
+        if not config_path.is_file():
+            return None
+        raw = config_path.read_text(encoding="utf-8")
+        config = _yaml.safe_load(raw)
+        if not isinstance(config, dict):
+            return None
+        chat_context = config.get("plugins", {}).get("config", {}).get("hermes-continuation", {}).get("chat_context", {})
+        if not isinstance(chat_context, dict):
+            return None
+        key = f"{source_platform}:{source_chat_id}"
+        fallback_key = source_chat_id  # try bare chat_id too
+        return chat_context.get(key, chat_context.get(fallback_key))
+    except Exception:
+        return None
+
+
 def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -394,14 +432,38 @@ def hermes_handoff_resume(args: dict[str, Any], **_: Any) -> str:
         return _error(exc)
 
 
-def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
+def hermes_handoff_command(raw_args: str = "", **kwargs: Any) -> str:
     """Handle the plugin `/handoff` slash command.
 
     Hermes passes the raw trailing text after `/handoff`. The command remains
     a UX shim: create/resume operations are delegated to the existing tool
     handlers so the success/error envelope and validation behavior stay in one
     place.
+
+    When ``kwargs`` contains ``source_platform`` and ``source_chat_id``
+    (injected by Gateway/CLI/TUI dispatchers), the handler resolves a
+    chat-context repo path from config and injects it into the parsed args
+    so subcommands use the correct repo for each chat.
     """
+    # Resolve chat context only when repo_path is not explicitly provided
+    source_platform = kwargs.get("source_platform")
+    source_chat_id = kwargs.get("source_chat_id")
+    chat_repo = None
+
+    def _inject_chat_repo(raw: str) -> str:
+        """Prepend ``repo_path=...`` to raw args if chat context is available
+        and the user did not already provide repo_path."""
+        nonlocal chat_repo
+        if not source_platform or not source_chat_id:
+            return raw
+        # Check if user already specified repo_path
+        if "repo_path" in raw or "repo_path=" in raw:
+            return raw
+        if chat_repo is None:
+            chat_repo = _resolve_chat_repo(source_platform, source_chat_id)
+        if chat_repo:
+            return f"repo_path={chat_repo} {raw}"
+        return raw
     try:
         verb, payload = _split_handoff_command(str(raw_args or ""))
         if verb == "help":
@@ -409,19 +471,19 @@ def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
         if verb == "create":
             if not payload.strip():
                 return _HANDOFF_HELP
-            result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(payload)))
+            result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(_inject_chat_repo(payload))))
             return _format_create_command_result(result)
         if verb == "prepare":
-            result = _load_handler_result(hermes_handoff_prepare(_parse_prepare_command_args(payload)))
+            result = _load_handler_result(hermes_handoff_prepare(_parse_prepare_command_args(_inject_chat_repo(payload))))
             return _format_prepare_command_result(result)
         if verb == "resume":
             result = _load_handler_result(hermes_handoff_resume(_parse_resume_command_args(payload)))
             return _format_resume_command_result(result)
         if verb == "watch":
-            result = _load_handler_result(hermes_handoff_watch(_parse_prepare_command_args(payload)))
+            result = _load_handler_result(hermes_handoff_watch(_parse_prepare_command_args(_inject_chat_repo(payload))))
             return _format_watch_command_result(result)
         if verb == "doctor":
-            result = _load_handler_result(hermes_handoff_doctor(_parse_prepare_command_args(payload)))
+            result = _load_handler_result(hermes_handoff_doctor(_parse_prepare_command_args(_inject_chat_repo(payload))))
             return _format_doctor_command_result(result)
         return f"Unknown handoff subcommand: {verb}\n\n{_HANDOFF_HELP}"
     except (json.JSONDecodeError, ValueError) as exc:
