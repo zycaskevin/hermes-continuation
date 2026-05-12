@@ -24,7 +24,7 @@ DEFAULT_AUTO_WATCH_CONFIG: dict[str, Any] = {
 }
 
 _CONFIG_ENV_VAR = "HERMES_CONTINUATION_AUTO_WATCH_CONFIG"
-_DEFAULT_CONFIG_PATH = Path.home() / ".config" / "hermes-continuation" / "auto_watch.json"
+_DEFAULT_CONFIG_PATH = Path.home() / ".hermes" / "hermes-continuation" / "auto_watch.json"
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -285,7 +285,7 @@ def load_auto_watch_config() -> dict:
     """Load auto-watch config, falling back to safe defaults.
 
     The default hypothetical path is
-    ``~/.config/hermes-continuation/auto_watch.json``. Tests or wrappers may set
+    ``~/.hermes/hermes-continuation/auto_watch.json``. Tests or wrappers may set
     ``HERMES_CONTINUATION_AUTO_WATCH_CONFIG`` to point at a JSON or TOML file.
     Missing or invalid config files simply return defaults.
     """

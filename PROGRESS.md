@@ -121,9 +121,11 @@ plugins:
 - Integrated into `evaluate_and_log()` on `auto_watch.py`
 - `auto_watch.py` tests updated with 5 new `evaluate_and_log` tests
 
-### D-2: Threshold tuning (pending real data)
-- Review script skeleton ready
+### D-2: Threshold tuning — review script ✅
+- `handoff_watch_review.py` implemented + 24 unit/integration tests
+- Reads watch log JSONL, prints analysis with level distribution, trigger sources, cooldown ratio, average metrics, and threshold tuning suggestions
 - Requires ≥50 log entries before meaningful tuning
+- `--days N` filter for time-bounded analysis
 - Target: false positive rate <30%, zero noise complaints
 
 ## Remaining Work (Post-v0.3.0)

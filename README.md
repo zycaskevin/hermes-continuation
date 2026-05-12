@@ -138,6 +138,29 @@ plugins:
 
 One-click off switch: set `enabled: false` to silence all auto-triggers instantly — no downgrade needed. All auto-triggers are **read-only**, never write packets, and never include repo names or file paths in notifications.
 
+#### Config file locations
+
+Auto-watch supports two config sources depending on how you run it:
+
+| Environment | Config path | Format |
+|-------------|-------------|--------|
+| **Hermes plugin** | `~/.hermes/config.yaml` — under `plugins.config.hermes-continuation.auto_watch` | YAML |
+| **Standalone (cron / CLI-only)** | `~/.hermes/hermes-continuation/auto_watch.json` | JSON or TOML |
+
+The standalone JSON config uses the same keys without the YAML nesting:
+
+```json
+{
+  "enabled": true,
+  "tool_calls": 5,
+  "elapsed": 30,
+  "cooldown": 20,
+  "notify_levels": ["advise", "prepare", "block"]
+}
+```
+
+Override either path with `HERMES_CONTINUATION_AUTO_WATCH_CONFIG=/path/to/config.{json,toml}`.
+
 ## Hermes plugin quick start
 
 The package exposes this entry point:
