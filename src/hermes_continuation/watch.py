@@ -108,6 +108,7 @@ def build_watch_result(
     auto_task_state: bool = True,
     tool_calls: int | None = None,
     elapsed_minutes: int | None = None,
+    context: dict[str, Any] | None = None,
     dirty_threshold: int = 1,
     verified_gates: Iterable[str] | None = None,
     failing_gates: Iterable[str] | None = None,
@@ -134,6 +135,12 @@ def build_watch_result(
         explicit_request=explicit_request,
     )
     recommendation = doctor_result.to_dict()
+
+    if context is not None:
+        if tool_calls is None:
+            tool_calls = context.get("tool_calls")
+        if elapsed_minutes is None:
+            elapsed_minutes = context.get("elapsed_minutes")
 
     watch_signals, watch_reasons = _watch_threshold_signals(
         recommendation,

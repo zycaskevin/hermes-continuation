@@ -167,7 +167,7 @@ Watch 边界：
 - 默认不是 daemon：只评估一次就退出；
 - 缺少 `goal` 或 `next` 时会降级为 `advise`，不会捏造 preview state；
 - `block` 结果会隐藏 secret values 与 safe create commands；
-- 目前没有 plugin/gateway `/handoff watch`；这个 MVP 只提供 CLI `hermes-handoff watch`。
+- 已提供 CLI `hermes-handoff watch` 与 Hermes plugin wrapper `hermes_handoff_watch`；两者都保持 read-only/advisory。
 
 白话 side-effect 边界：`doctor` 只建议，`prepare` 只预览，`create` 才写入，`watch` 通过既有 doctor/prepare helpers 观察、建议、预览。
 
