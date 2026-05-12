@@ -180,16 +180,26 @@ The plugin wrapper exposes recommendation/preview behavior without changing Herm
 Current tools:
 
 - `hermes_handoff_prepare` — read-only preview; never writes packet files.
+- `hermes_handoff_watch` — one-shot read-only watch evaluation using local signals and thresholds.
 - `hermes_handoff_create` — explicit write path for Markdown + JSON packets.
 - `hermes_handoff_resume` — read existing handoff JSON.
 
-On compatible runtimes, the optional slash command supports `/handoff prepare ...` as a UX shim over `hermes_handoff_prepare`. The command must preserve the Phase 2 compatibility rule:
+On compatible runtimes, the optional slash command supports `/handoff prepare ...` and `/handoff watch ...` as UX shims over `hermes_handoff_prepare` and `hermes_handoff_watch`. The command must preserve the Phase 2 compatibility rule:
 
 - `register_tool` is required;
 - incompatible optional command registration must not prevent tool registration;
 - command-registration warnings must remain non-fatal.
 
-There is no plugin tool, gateway route, or slash command for watch yet. The implemented auto-trigger MVP is CLI-only: `hermes-handoff watch`.
+### `hermes_handoff_prepare` — Degraded Behavior
+
+When `repo_path` is omitted or empty, the tool defaults to the current working directory (`"."`). If the current working directory is not a git repository or lacks any recognizable project markers, the preview degrades gracefully:
+
+- `level` degrades to `advise` with signal `missing_required_prepare_input`.
+- `safe_create_command` is set to `None` (no shell command shown).
+- `would_write` remains `false`.
+- No `.hermes/handoffs/` directory is created.
+
+This ensures the prepare tool is always safe to call — it never errors out on missing state, and never leaves artifacts behind.
 
 ## Safety Gates Before Any Future Automatic Write
 
@@ -223,9 +233,29 @@ Phase 3A/3B/3C/3D intentionally do not implement:
 - cloud sync;
 - dashboard UI;
 - background daemon monitoring;
-- plugin/gateway `/handoff watch`.
+- plugin/gateway `/handoff watch` (implemented in `v0.2.0` via `hermes_handoff_watch` tool and `/handoff watch` command).
 
 These may be separate future projects, but they should not be smuggled into the first trigger policy.
+
+### Future Daemon Mode — Design Boundary
+
+The current one-shot CLI and plugin `watch` does not run as a daemon. If a future version introduces background watch/daemon behavior, the following constraints must be respected:
+
+1. **No hidden writes** — a daemon must never create `.hermes/handoffs/` packets without explicit user approval. It may only observe, advise, or prepare previews, exactly like the current one-shot surfaces.
+
+2. **No session lifecycle changes** — a daemon must not restart sessions, launch new agents, or modify Hermes core internals. It remains a sidecar observer.
+
+3. **Opt-in activation** — daemon mode must be explicitly enabled by the user (e.g., `--daemon` flag, `daemon: true` in config, or a cron-style scheduled trigger). It must never activate implicitly.
+
+4. **Bounded resource usage** — a daemon must have a clear polling interval, a maximum runtime, and a clean shutdown path. It must not consume unbounded CPU, memory, or disk I/O.
+
+5. **Secret-safe at rest and in transit** — any daemon-generated previews or logs must pass the same redaction and private-key blocking pipeline as the current one-shot surfaces. Daemon output must never be committed to the repository.
+
+6. **Compatible with the existing UX contract** — daemon-triggered messages must follow the same `observe`/`advise`/`prepare`/`block` levels and formatting as the current non-daemon surfaces. Users should not need to learn a new vocabulary.
+
+7. **Separate release** — daemon mode is a breaking UX change and should ship in its own minor version (e.g., `v0.3.0`), not as a silent addition to a patch release.
+
+These boundaries are defined here as design guardrails — they are not implementation specifications. Any future daemon work must satisfy these constraints before merging.
 
 ## Implementation Phases
 

@@ -64,16 +64,19 @@ def test_register_adds_create_resume_tools_and_handoff_command():
     plugin.register(ctx)
 
     names = [item["name"] for item in ctx.tools]
-    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL, plugin.WATCH_TOOL]
     assert all(item["toolset"] == plugin.TOOLSET for item in ctx.tools)
     assert ctx.tools[0]["schema"]["parameters"]["required"] == ["goal", "next_task"]
     assert "auto_task_state" in ctx.tools[0]["schema"]["parameters"]["properties"]
     assert ctx.tools[1]["schema"]["parameters"]["required"] == ["handoff_json"]
     assert ctx.tools[2]["schema"]["parameters"]["required"] == []
     assert "next" in ctx.tools[2]["schema"]["parameters"]["properties"]
+    assert ctx.tools[3]["schema"]["parameters"]["required"] == []
+    assert "tool_calls" in ctx.tools[3]["schema"]["parameters"]["properties"]
     assert callable(ctx.tools[0]["handler"])
     assert callable(ctx.tools[1]["handler"])
     assert callable(ctx.tools[2]["handler"])
+    assert callable(ctx.tools[3]["handler"])
 
     assert len(ctx.commands) == 1
     command = ctx.commands[0]
@@ -89,7 +92,7 @@ def test_register_without_command_api_still_registers_tools():
     plugin.register(ctx)
 
     names = [item["name"] for item in ctx.tools]
-    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL, plugin.WATCH_TOOL]
 
 
 def test_register_with_incompatible_command_api_keeps_tools_and_records_warning():
@@ -97,7 +100,7 @@ def test_register_with_incompatible_command_api_keeps_tools_and_records_warning(
     plugin.register(ctx)
 
     names = [item["name"] for item in ctx.tools]
-    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL]
+    assert names == [plugin.CREATE_TOOL, plugin.RESUME_TOOL, plugin.PREPARE_TOOL, plugin.WATCH_TOOL]
     assert ctx.commands == []
     warnings = ctx._hermes_continuation_registration_warnings
     assert isinstance(warnings, list)

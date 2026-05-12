@@ -11,6 +11,7 @@ from typing import Any
 from .git_state import collect_git_state
 from .packet import build_packet
 from .prepare import build_prepare_preview, format_prepare_preview
+from .watch import build_watch_result, format_watch_result
 from .redaction import RedactionBlocked
 from .render_markdown import render_markdown
 from .task_state import collect_task_state, merge_task_state
@@ -20,10 +21,11 @@ TOOLSET = "hermes_continuation"
 CREATE_TOOL = "hermes_handoff_create"
 RESUME_TOOL = "hermes_handoff_resume"
 PREPARE_TOOL = "hermes_handoff_prepare"
+WATCH_TOOL = "hermes_handoff_watch"
 HANDOFF_COMMAND = "handoff"
 
 
-_HANDOFF_ARGS_HINT = "create <json|key=value>|resume <handoff.json>|prepare <json|key=value>"
+_HANDOFF_ARGS_HINT = "create <json|key=value>|resume <handoff.json>|prepare <json|key=value>|watch <json|key=value>"
 
 _HANDOFF_HELP = """Hermes handoff command usage:
 
@@ -32,6 +34,8 @@ _HANDOFF_HELP = """Hermes handoff command usage:
 /handoff {"repo_path":".","goal":"Current goal","next_task":"Next step"}
 /handoff prepare {"repo_path":".","goal":"Current goal","next_task":"Next step","auto_task_state":true}
 /handoff prepare repo_path=. goal="Current goal" next_task="Next step" auto_task_state=true
+/handoff watch {"repo_path":".","goal":"Current goal","next_task":"Next step","tool_calls":10,"elapsed_minutes":35}
+/handoff watch repo_path=. goal="Current goal" next_task="Next step" tool_calls=10 elapsed_minutes=35
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
 
@@ -39,6 +43,7 @@ Notes:
 - Bare /handoff shows this help instead of creating an underspecified packet.
 - Create requires goal and next_task, matching hermes_handoff_create.
 - Prepare is read-only; it previews advisory state and never writes packet files.
+- Watch is read-only one-shot advisory evaluation using local signals and thresholds.
 - auto_task_state is opt-in and conservatively reads repo-local docs only.
 - The plugin command is sidecar-only and does not modify Hermes core.
 """.strip()
@@ -161,7 +166,7 @@ def _split_handoff_command(raw_args: str) -> tuple[str, str]:
     verb = first.strip().lower()
     if verb in {"help", "--help", "-h"}:
         return "help", ""
-    if verb in {"create", "resume", "prepare"}:
+    if verb in {"create", "resume", "prepare", "watch"}:
         return verb, rest.strip() if sep else ""
     if text.startswith("{") or "=" in first:
         return "create", text
@@ -200,6 +205,12 @@ def _format_prepare_command_result(result: dict[str, Any]) -> str:
     if not isinstance(preview, dict):
         return "Handoff prepare failed: handler returned missing preview"
     return format_prepare_preview(preview)
+
+
+def _format_watch_command_result(result: dict[str, Any]) -> str:
+    if not result.get("success"):
+        return f"Handoff watch failed: {result.get('error', 'unknown error')}"
+    return format_watch_result(result)
 
 
 def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
@@ -283,6 +294,29 @@ def hermes_handoff_prepare(args: dict[str, Any], **_: Any) -> str:
         return _error(exc)
 
 
+def hermes_handoff_watch(args: dict[str, Any], **_: Any) -> str:
+    """Run a one-shot read-only handoff watch evaluation."""
+    try:
+        repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
+        result = build_watch_result(
+            repo_path,
+            goal=str(args.get("goal") or "").strip(),
+            next_task=str(args.get("next_task") or args.get("next") or "").strip(),
+            in_progress=str(args.get("active_task") or args.get("in_progress") or "").strip(),
+            auto_task_state=_as_bool(args["auto_task_state"]) if "auto_task_state" in args else True,
+            tool_calls=args.get("tool_calls"),
+            elapsed_minutes=args.get("elapsed_minutes"),
+            dirty_threshold=args.get("dirty_threshold", 1),
+            explicit_request=_as_bool(args.get("explicit_request")),
+            verified_gates=_as_list(args.get("verified")),
+            failing_gates=_as_list(args.get("failing")),
+            not_run_gates=_as_list(args.get("not_run")),
+        )
+        return _json_response(result)
+    except (OSError, ValidationError, ValueError) as exc:
+        return _error(exc)
+
+
 def hermes_handoff_resume(args: dict[str, Any], **_: Any) -> str:
     """Read a handoff JSON and return its resume prompt."""
     try:
@@ -326,6 +360,9 @@ def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
         if verb == "resume":
             result = _load_handler_result(hermes_handoff_resume(_parse_resume_command_args(payload)))
             return _format_resume_command_result(result)
+        if verb == "watch":
+            result = _load_handler_result(hermes_handoff_watch(_parse_prepare_command_args(payload)))
+            return _format_watch_command_result(result)
         return f"Unknown handoff subcommand: {verb}\n\n{_HANDOFF_HELP}"
     except (json.JSONDecodeError, ValueError) as exc:
         return f"Handoff command error: {exc}\n\n{_HANDOFF_HELP}"
@@ -388,6 +425,31 @@ _PREPARE_SCHEMA: dict[str, Any] = {
     },
 }
 
+_WATCH_SCHEMA: dict[str, Any] = {
+    "name": WATCH_TOOL,
+    "description": "Run a one-shot read-only handoff watch evaluation using local signals and thresholds. Never writes handoff files.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "repo_path": {"type": "string", "description": "Repository path to inspect. Defaults to the current directory."},
+            "goal": {"type": "string", "description": "Current goal; missing values degrade to advisory output."},
+            "active_task": {"type": "string", "description": "Current in-progress work, if any."},
+            "in_progress": {"type": "string", "description": "Alias for active_task."},
+            "next_task": {"type": "string", "description": "Next recommended task."},
+            "next": {"type": "string", "description": "Alias for next_task."},
+            "auto_task_state": {"type": "boolean", "description": "Read conservative task-state hints from repo docs. Defaults to true."},
+            "tool_calls": {"type": "integer", "description": "Number of tool calls observed (threshold: 5+)."},
+            "elapsed_minutes": {"type": "integer", "description": "Elapsed minutes observed (threshold: 30+)."},
+            "dirty_threshold": {"type": "integer", "description": "Minimum changed files to trigger (default: 1)."},
+            "explicit_request": {"type": "boolean", "description": "Whether the user explicitly requested a handoff."},
+            "verified": {"type": "array", "items": {"type": "string"}},
+            "failing": {"type": "array", "items": {"type": "string"}},
+            "not_run": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [],
+    },
+}
+
 
 def register(ctx: Any) -> None:
     """Register Hermes continuation tools and optional command."""
@@ -418,6 +480,14 @@ def register(ctx: Any) -> None:
         handler=hermes_handoff_prepare,
         description="Preview a handoff create command without writing files.",
         emoji="🧭",
+    )
+    register_tool(
+        name=WATCH_TOOL,
+        toolset=TOOLSET,
+        schema=_WATCH_SCHEMA,
+        handler=hermes_handoff_watch,
+        description="Run a one-shot read-only handoff watch evaluation.",
+        emoji="👀",
     )
 
     register_command = getattr(ctx, "register_command", None)
