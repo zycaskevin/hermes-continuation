@@ -2,7 +2,7 @@
 
 `hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work.
 
-The current MVP is intentionally narrow: `doctor` recommends, `prepare` previews, `create` writes a local Markdown + JSON handoff packet that a fresh Hermes session can read before continuing, and `watch` performs a one-shot read-only advisory check using the existing doctor/prepare helpers. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, run a daemon by default, or perform hidden writes.
+The current MVP: `doctor` recommends, `prepare` previews, `watch` performs a one-shot read-only advisory check, `create` writes a local Markdown + JSON handoff packet, and `resume` reads it for a fresh session. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or run a daemon.
 
 ## Usage guides
 
@@ -131,7 +131,7 @@ After restarting Hermes, builds with plugin slash-command support may expose:
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-The plugin also registers three tools: `hermes_handoff_prepare`, `hermes_handoff_create`, and `hermes_handoff_resume`. Plugin `prepare` is read-only and has no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` exposes the same preview behavior through the optional slash command. There is no plugin/gateway `/handoff watch` command yet; watch is CLI-only in this MVP.
+The plugin also registers **four tools**: `hermes_handoff_prepare`, `hermes_handoff_watch`, `hermes_handoff_create`, and `hermes_handoff_resume`. Plugin `prepare` and `watch` are read-only and have no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` and `/handoff watch ...` expose the same behavior through optional slash commands.
 
 ## Safety boundaries
 
