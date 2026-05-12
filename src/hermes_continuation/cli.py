@@ -8,6 +8,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import i18n
 from .doctor import evaluate_handoff_recommendation, format_recommendation
 from .git_state import collect_git_state
 from .packet import build_packet
@@ -62,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repeatable(doctor, "--not-run", "Not-run gate; may be repeated")
     doctor.add_argument("--explicit-request", action="store_true", help="Treat this invocation as an explicit user handoff request")
     doctor.add_argument("--json", action="store_true", help="Print a JSON recommendation envelope")
+    doctor.add_argument("--locale", choices=["en", "zh-TW"], default="zh-TW", help="Output language (default: zh-TW)")
     doctor.set_defaults(func=handle_doctor)
 
     prepare = subparsers.add_parser(
@@ -78,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repeatable(prepare, "--failing", "Failing gate; may be repeated")
     _add_repeatable(prepare, "--not-run", "Not-run gate; may be repeated")
     prepare.add_argument("--json", action="store_true", help="Print a JSON prepare preview envelope")
+    prepare.add_argument("--locale", choices=["en", "zh-TW"], default="zh-TW", help="Output language (default: zh-TW)")
     prepare.set_defaults(func=handle_prepare)
 
     watch = subparsers.add_parser(
@@ -98,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repeatable(watch, "--not-run", "Not-run gate; may be repeated")
     watch.add_argument("--explicit-request", action="store_true", help="Treat this invocation as an explicit user handoff request")
     watch.add_argument("--json", action="store_true", help="Print a JSON watch result envelope")
+    watch.add_argument("--locale", choices=["en", "zh-TW"], default="zh-TW", help="Output language (default: zh-TW)")
     watch.set_defaults(func=handle_watch)
     return parser
 
@@ -181,6 +185,7 @@ def handle_resume(args: argparse.Namespace) -> int:
 
 
 def handle_doctor(args: argparse.Namespace) -> int:
+    i18n.set_locale(args.locale)
     repo_path = Path(args.repo).expanduser().resolve()
     result = evaluate_handoff_recommendation(
         repo_path,
@@ -202,6 +207,7 @@ def handle_doctor(args: argparse.Namespace) -> int:
 
 
 def handle_prepare(args: argparse.Namespace) -> int:
+    i18n.set_locale(args.locale)
     preview = build_prepare_preview(
         Path(args.repo).expanduser().resolve(),
         goal=args.goal,
@@ -221,6 +227,7 @@ def handle_prepare(args: argparse.Namespace) -> int:
 
 
 def handle_watch(args: argparse.Namespace) -> int:
+    i18n.set_locale(args.locale)
     result = build_watch_result(
         Path(args.repo).expanduser().resolve(),
         goal=args.goal,

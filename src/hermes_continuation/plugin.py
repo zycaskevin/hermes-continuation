@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import i18n
 from .git_state import collect_git_state
 from .packet import build_packet
 from .doctor import evaluate_handoff_recommendation, format_recommendation
@@ -50,6 +51,7 @@ Notes:
 - Prepare is read-only; it previews advisory state and never writes packet files.
 - Watch is read-only one-shot advisory evaluation using local signals and thresholds.
 - auto_task_state is opt-in and conservatively reads repo-local docs only.
+- locale=en or locale=zh-TW sets the output language (default: zh-TW).
 - The plugin command is sidecar-only and does not modify Hermes core.
 """.strip()
 
@@ -305,6 +307,8 @@ def hermes_handoff_create(args: dict[str, Any], **_: Any) -> str:
 def hermes_handoff_prepare(args: dict[str, Any], **_: Any) -> str:
     """Build a read-only handoff prepare preview and return a JSON result envelope."""
     try:
+        if "locale" in args:
+            i18n.set_locale(args["locale"])
         repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
         auto_task_state = _as_bool(args["auto_task_state"]) if "auto_task_state" in args else True
         preview = build_prepare_preview(
@@ -325,6 +329,8 @@ def hermes_handoff_prepare(args: dict[str, Any], **_: Any) -> str:
 def hermes_handoff_watch(args: dict[str, Any], **_: Any) -> str:
     """Run a one-shot read-only handoff watch evaluation."""
     try:
+        if "locale" in args:
+            i18n.set_locale(args["locale"])
         repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
         result = build_watch_result(
             repo_path,
@@ -348,6 +354,8 @@ def hermes_handoff_watch(args: dict[str, Any], **_: Any) -> str:
 def hermes_handoff_doctor(args: dict[str, Any], **_: Any) -> str:
     """Run a read-only handoff doctor evaluation."""
     try:
+        if "locale" in args:
+            i18n.set_locale(args["locale"])
         repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
         auto_task_state = _as_bool(args["auto_task_state"]) if "auto_task_state" in args else True
         result = evaluate_handoff_recommendation(
@@ -472,6 +480,7 @@ _PREPARE_SCHEMA: dict[str, Any] = {
             "verified": {"type": "array", "items": {"type": "string"}},
             "failing": {"type": "array", "items": {"type": "string"}},
             "not_run": {"type": "array", "items": {"type": "string"}},
+            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language for human-readable formatting (default: zh-TW)."},
         },
         "required": [],
     },
@@ -497,6 +506,7 @@ _WATCH_SCHEMA: dict[str, Any] = {
             "verified": {"type": "array", "items": {"type": "string"}},
             "failing": {"type": "array", "items": {"type": "string"}},
             "not_run": {"type": "array", "items": {"type": "string"}},
+            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language for human-readable formatting (default: zh-TW)."},
         },
         "required": [],
     },
@@ -519,6 +529,7 @@ _DOCTOR_SCHEMA: dict[str, Any] = {
             "verified": {"type": "array", "items": {"type": "string"}},
             "failing": {"type": "array", "items": {"type": "string"}},
             "not_run": {"type": "array", "items": {"type": "string"}},
+            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language for human-readable formatting (default: zh-TW)."},
         },
         "required": [],
     },

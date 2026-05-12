@@ -182,35 +182,45 @@ _FORMAT_LABELS: dict[str, dict[LocaleTag, str]] = {
 
 # ── public API ──
 
+_session_locale: LocaleTag = _DEFAULT_LOCALE
+
+
+def set_locale(locale: LocaleTag) -> None:
+    """Set the session locale for all subsequent i18n calls (thread-safe-ish)."""
+    global _session_locale
+    if locale in ("en", "zh-TW"):
+        _session_locale = locale
+
+
 def current_locale() -> LocaleTag:
-    """Return the session locale tag (always zh-TW for Arthur's workspace)."""
-    return _DEFAULT_LOCALE
+    """Return the session locale tag."""
+    return _session_locale
 
 
 def level_label(level: str, locale: LocaleTag | None = None) -> str:
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     return _LEVEL_LABELS.get(level, {}).get(loc, level)
 
 
 def level_summary(level: str, locale: LocaleTag | None = None) -> str:
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     return _LEVEL_SUMMARIES.get(level, {}).get(loc, level)
 
 
 def signal_label(signal: str, locale: LocaleTag | None = None) -> str:
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     return _SIGNAL_LABELS.get(signal, {}).get(loc, signal)
 
 
 def reason_message(reason_key: str, locale: LocaleTag | None = None) -> str:
     """Translate a structured reason key to human-readable text."""
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     return _REASON_MESSAGES.get(reason_key, {}).get(loc, reason_key)
 
 
 def rec_text(key: str, locale: LocaleTag | None = None, **fmt: str) -> str:
     """Translate recommendation text with optional format substitution."""
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     template = _RECOMMENDATION_TEXT.get(key, {}).get(loc, key)
     if fmt:
         template = template.format(**fmt)
@@ -218,10 +228,10 @@ def rec_text(key: str, locale: LocaleTag | None = None, **fmt: str) -> str:
 
 
 def block_reason(key: str, locale: LocaleTag | None = None) -> str:
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     return _BLOCK_REASONS.get(key, {}).get(loc, key)
 
 
 def fmt_label(key: str, locale: LocaleTag | None = None) -> str:
-    loc = locale or _DEFAULT_LOCALE
+    loc = locale or _session_locale
     return _FORMAT_LABELS.get(key, {}).get(loc, key)
