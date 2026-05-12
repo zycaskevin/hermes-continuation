@@ -1,231 +1,135 @@
 # Hermes Continuation Progress
 
-## Current Status — No Active Implementation Task
+## Current Status — v0.3.0 Task D + Docs Update Complete
 
-- **No active implementation task is currently open.**
-- Repository: `/home/zycas/hermes-continuation`
-- Branch: `main`
-- Sync state: `main` is synced to `origin/main` after the latest pushed documentation/dogfood update.
-- GitHub PR status: PR #1 is merged; open PRs: none.
-- This document is now current-status-first so future agents do not reopen completed historical plans.
+- **Version:** v0.3.0
+- **Repository:** `/home/zycas/hermes-continuation`
+- **Branch:** `main`
+- **Sync state:** `main` synced to `origin/main`
+- **Last commit:** Task D + CI update + docs
+- **Test status:** 124 tests passed ✅
 
-## Completed Product Surface
+## v0.3.0 Completed Product Surface
 
-The public sidecar/plugin product currently includes these implemented surfaces:
+### CLI commands (5)
 
-- CLI command: `hermes-handoff create`
-  - Writes paired Markdown and JSON handoff packets under `.hermes/handoffs/`.
-  - Captures repo state, task state, verification notes, safety/redaction status, and resume prompt.
-- CLI command: `hermes-handoff resume`
-  - Reads an existing handoff JSON and prints the stored `resume_prompt` for a fresh session.
-  - Does not mutate the packet or create new handoff artifacts.
-- CLI command: `hermes-handoff doctor`
-  - Provides read-only advisory recommendations using local sidecar signals.
-  - Supports recommendation levels such as `observe`, `advise`, `prepare`, and `block`.
-- CLI command: `hermes-handoff prepare`
-  - Builds a read-only preview of a safe create command and packet intent.
-  - Does not write `.hermes/handoffs/` output.
-- CLI command: `hermes-handoff watch`
-  - Implements one-shot read-only/advisory auto-trigger evaluation.
-  - Observes local signals and reuses existing doctor/prepare helpers to advise or preview.
-  - Supports `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, `--json`, `--goal`, and `--next`.
-  - Never writes `.hermes/handoffs/`, never calls hidden create behavior, and does not run as a daemon by default.
-- CLI option: `--auto-task-state`
-  - Opt-in repo-local task-state collection from safe project documents and git context.
-  - Manual values remain authoritative over inferred values.
-- Plugin tool: `hermes_handoff_create`
-  - Exposes the create flow through the Hermes plugin wrapper.
-- Plugin tool: `hermes_handoff_resume`
-  - Exposes the resume flow through the Hermes plugin wrapper.
-- Plugin tool: `hermes_handoff_prepare`
-  - Exposes the advisory prepare preview through the Hermes plugin wrapper.
-- Plugin slash command: `/handoff create`
-  - Plugin-only command surface; it is not a Hermes core command.
-- Plugin slash command: `/handoff resume`
-  - Plugin-only resume surface using the existing sidecar resume behavior.
-- Plugin slash command: `/handoff prepare`
-  - Plugin-only prepare preview surface; advisory/read-only.
-- CI and verification gates are present for public readiness:
-  - Python 3.11/3.12 GitHub CI.
-  - Public documentation tests.
-  - Hermes runtime/plugin smoke coverage.
-  - Prepare/advisory behavior tests.
-  - Secret scan gates.
-  - `git diff --check` whitespace gate.
-  - Graphify maintenance/rebuild gate.
+| Command | Function | Writes files? |
+|---------|----------|:---:|
+| `hermes-handoff create` | Write handoff packet (Markdown + JSON) | ✅ |
+| `hermes-handoff resume` | Read existing handoff JSON | ❌ |
+| `hermes-handoff doctor` | Analyze if handoff is recommended | ❌ |
+| `hermes-handoff prepare` | Preview handoff content | ❌ |
+| `hermes-handoff watch` | One-shot scan: tool calls, elapsed, changed files | ❌ |
 
-## Current Boundaries / Non-goals
+### v0.3.0 New Modules
 
-The current product remains a sidecar/plugin integration with explicit user control:
+| Module | Purpose |
+|--------|---------|
+| `context_monitor.py` | Auto-collect git changed_files + accept injected session metrics |
+| `auto_watch.py` | Gateway notification gating: thresholds + cooldown + config |
+| `watch_logger.py` | Local JSONL event logger (zero token cost) |
+| `handoff_watch_cron.py` | Standalone cron script with dedup state tracking |
 
-- No Hermes core changes.
-- No automatic session restart.
-- No full Hermes transcript parsing.
-- No fresh-agent launch.
-- No cloud sync or dashboard.
-- No hidden writes:
-  - `doctor` recommends.
-  - `prepare` previews.
-  - `watch` observes/advises/previews through existing helpers.
-  - `create` writes only when explicitly invoked.
-- `/handoff` exists only through the plugin wrapper on compatible Hermes runtimes; it is not a built-in Hermes core command.
-- No plugin/gateway `/handoff watch` command is implemented yet; the watch MVP is CLI-only.
-- Generated runtime artifacts such as `.hermes/handoffs/`, `graphify-out/`, caches, and package build outputs should not be committed unless a future task explicitly asks for that.
+### Plugin tools (5)
 
-## Recommended Next Roadmap
+| Tool | Function |
+|------|----------|
+| `hermes_handoff_create` | Write handoff packet |
+| `hermes_handoff_resume` | Read existing handoff |
+| `hermes_handoff_prepare` | Preview handoff content |
+| `hermes_handoff_watch` | One-shot watch evaluation |
+| `hermes_handoff_doctor` | Analyze + recommend |
 
-Only these are future tasks; completed historical phase plans should not be reopened as active work.
+### Auto-trigger architecture (v0.3.0)
 
-### P1 — Real dogfood in Arthur's Hermes runtime/gateway
+```
+Trigger sources           Processing layer           Notification targets
+┌──────────┐          ┌──────────┐          ┌──────────┐
+│ Gateway  │ ──┬───→  │          │          │ Feishu   │
+│ Wrapper  │   │      │  Watch   │ ──────→  │ 報告群    │
+└──────────┘   │      │  Engine  │          └──────────┘
+               │      │          │
+┌──────────┐   │      │ (reuses   │          ┌──────────┐
+│ Cron     │ ──┤      │ v0.2.0    │          │ Gateway  │
+│ Jobs     │   │      │ doctor    │ ──────→  │ Session  │
+└──────────┘   │      │ prepare   │          └──────────┘
+               │      │ watch)    │
+┌──────────┐   │      └──────────┘
+│ Context  │ ──┘      ┌──────────┐
+│ Monitor  │          │  Logger  │ → Local JSONL
+└──────────┘          └──────────┘
+```
 
-Status: completed for CLI and local Hermes runtime plugin path on 2026-05-11.
+### Auto-watch notification format
 
-Verified:
+```
+⚠️ 有一個開發中的專案建議交接
+已開發約 45 分鐘，使用 80+ 次工具，12 個檔案有變更
+→ 回對話中輸入 /handoff prepare 來預覽交接內容
+```
 
-- Hermes v0.13.0 is installed at `/home/zycas/.local/bin/hermes`.
-- `~/.hermes/config.yaml` enables `hermes-continuation`.
-- The Hermes venv can import this checkout's `hermes_continuation` package.
-- CLI dogfood passed:
-  - `hermes-handoff prepare` human output returned `prepare`.
-  - JSON output returned `preview.level == "prepare"` and `would_write == false`.
-  - Missing `next` degraded to `advise` with no safe create command.
-  - No `.hermes/handoffs/` directory was created in the dogfood repo.
-- Hermes runtime plugin dogfood passed:
-  - Real plugin runtime loaded `hermes-continuation` with 3 tools and 1 command.
-  - Registry tool `hermes_handoff_prepare` returned `preview.level == "prepare"` and `would_write == false`.
-  - Plugin command handler `/handoff prepare ...` returned human-readable preview text.
-  - No handoff artifacts were written.
+Design principles:
+- ❌ No repo name or path (prevents info leak in groups)
+- ❌ No changed file names
+- ✅ Approximate counts only (45 min, 80+ calls, 12 files)
+- ✅ Actionable next step (`/handoff prepare`)
+- ✅ Mobile-readable in one glance
 
-Remaining optional observation:
+### Watch event logger
 
-- Inspect Feishu/Telegram message readability during a natural future task. Runtime command execution is verified; visual copy/readability can be refined later if the output feels too technical.
+Logs to `~/.hermes/logs/handoff_watch.jsonl`:
+```jsonl
+{"ts":"2026-05-15T14:30:00+00:00","level":"advise","tool_calls":8,"elapsed":45,"changed_files":3,"trigger":"gateway","recommendation_level":"prepare"}
+```
 
-### P2 — Release/tag flow
+Key properties:
+- Zero LLM-token cost (not read by agent)
+- No conversation content, file contents, or repo paths
+- String fields capped at 200 characters
+- Best-effort (never raises, never blocks)
 
-- Select a release version, for example `v0.1.0` or another chosen version.
-- Create release notes from the completed product surface and latest verification.
-- Re-check install documentation against the packaged/released flow.
-- Tag and publish only when explicitly requested by a release task.
+### Config reference
 
-### P3 — Optional watch/advisory auto-trigger design and implementation
+```yaml
+plugins:
+  config:
+    hermes-continuation:
+      auto_watch:
+        enabled: true
+        tool_calls_threshold: 5
+        elapsed_minutes_threshold: 30
+        cooldown_minutes: 20
+        notify_levels: ["advise", "prepare", "block"]
+      watch_repos:
+        - /home/zycas/hermes-continuation
+        - /home/zycas/.hermes/hermes-agent
+```
 
-Status: implementation completed for one-shot CLI `hermes-handoff watch`; plugin/gateway watch is not implemented.
+### CI gates
 
-- Implementation plan updated: `docs/WATCH_ADVISORY_TRIGGER_PLAN.md`.
-- One-shot CLI `hermes-handoff watch` is implemented as read-only/advisory.
-- Watch observes local signals once and reuses existing doctor/prepare helpers to advise or preview.
-- Supported watch flags include `--tool-calls`, `--elapsed-minutes`, `--dirty-threshold`, `--explicit-request`, `--json`, `--goal`, and `--next`.
-- Missing `goal` or `next` degrades to `advise`; `block` suppresses secrets and safe create commands.
-- No plugin/gateway `/handoff watch` command exists yet.
-- Keep the policy advisory-first.
-- Preserve explicit-write-only behavior: automated checks may recommend or preview, but must not silently create packets.
-- Continue to avoid Hermes core session lifecycle changes unless a separate approved task changes the boundary.
+- Python 3.11 / 3.12 / 3.13 on GitHub Actions
+- pytest suite (124 tests)
+- compileall for all Python files
+- v0.3.0 module import verification
+- Lightweight secret scan (excludes `handoff_watch_logs` dir)
+- Whitespace + conflict marker check
 
-### P4 — Optional docs cleanup if more drift appears
+## Dogfood State
 
-- Remove or rewrite stale active-language references if future docs drift again.
-- Keep status docs current-status-first.
-- Preserve useful historical context only as past-tense archive material.
+### D-1: Watch logger ✅
+- `watch_logger.py` + 15 unit tests
+- Integrated into `evaluate_and_log()` on `auto_watch.py`
+- `auto_watch.py` tests updated with 5 new `evaluate_and_log` tests
 
-## Latest Verified Gates
+### D-2: Threshold tuning (pending real data)
+- Review script skeleton ready
+- Requires ≥50 log entries before meaningful tuning
+- Target: false positive rate <30%, zero noise complaints
 
-Latest dogfood verification recorded on 2026-05-11:
+## Remaining Work (Post-v0.3.0)
 
-- CLI `hermes-handoff prepare` human and JSON output passed in a temp git repo.
-- CLI missing-`next` case degraded to `advise` with no safe create command.
-- Hermes runtime plugin loaded `hermes-continuation` with 3 tools and 1 command.
-- Runtime registry tool `hermes_handoff_prepare` passed.
-- Runtime plugin command handler `/handoff prepare ...` passed.
-- Dogfood checks created no `.hermes/handoffs/` artifacts.
-
-Latest merged verification recorded for `30dd05d feat: add advisory and prepare handoff previews`:
-
-- Local full pytest passed: `80 passed`.
-- Public docs tests passed.
-- Runtime smoke, plugin, and prepare tests passed.
-- Strict secret scan passed: `STRICT_SECRET_SCAN_OK files=37`.
-- `git diff --check` passed.
-- Graphify rebuild completed: `853 nodes, 1180 edges, 62 communities`.
-- GitHub CI test matrix succeeded on Python 3.11 and 3.12.
-
-## Source of Truth
-
-Spec pack:
-
-- `/home/zycas/_knowledge_base/hermes-continuation-mvp/`
-
-Key decisions already made:
-
-- Build a Hermes-native sidecar first; do not modify Hermes core in the MVP/current product.
-- Output both human-readable Markdown and machine-readable JSON.
-- Manual command generation came first; advisory helpers now exist, but automatic hidden writes remain out of scope.
-- Handoff packets include repo state, task state, verification gates, safety/redaction status, and a fresh-session resume prompt.
-- Automatic task-state collection is repo-local and opt-in via `--auto-task-state`; it does not parse full Hermes transcripts.
-- The plugin wrapper may expose tools and plugin-only `/handoff` commands on compatible Hermes runtimes, but it does not change Hermes core.
-- One-shot `hermes-handoff watch` is a CLI-only advisory surface; plugin/gateway watch remains out of scope until separately approved.
-
-## Known Issues / Risks
-
-- Terminal/file tools were previously affected by a stale missing cwd (`/tmp/vault-for-llm-verify-vDN0F3`); use absolute paths from `/home/zycas` if needed.
-- OpenCode/delegate/subagent outputs must be verified by checking actual files and test results; self-report is not evidence.
-- Do not commit generated smoke handoff artifacts unless intentionally documenting examples.
-- The plugin wrapper now exposes plugin-only `/handoff` surfaces where compatible, but it still does not add a Hermes core `/handoff` command.
-- The sidecar remains explicit-action oriented: one-shot watch may recommend or preview, but there is no automatic context-risk detection that writes packets, runs a daemon, or restarts sessions.
-- Secret safety remains central: examples and docs should omit real API keys, tokens, passwords, chat IDs, message IDs, and connection strings or show them only as `[REDACTED]`.
-
-## Historical Archive
-
-The items below are history. They describe completed milestones or superseded plans in past tense and are not active implementation instructions.
-
-### MVP create flow
-
-- The project started from the MVP spec pack and a document-first `PROGRESS.md`.
-- The Python package skeleton and CLI help smoke path were created.
-- `hermes-handoff create` was implemented.
-- The git state collector was implemented with degraded non-git behavior.
-- Packet assembly, schema validation, Markdown rendering, resume prompt generation, redaction, and private-key fail-closed behavior were implemented.
-- Documentation, examples, and core tests were added.
-- Runtime handoff outputs were intentionally ignored via `.gitignore`.
-
-### Resume subcommand
-
-- `hermes-handoff resume <handoff.json>` was implemented after the create flow stabilized.
-- Resume reuses packet validation and requires a non-empty `resume_prompt`.
-- Default output is prompt-only for copy/paste or piping into a fresh Hermes session.
-- Error handling was added for missing files, invalid JSON, invalid packets, and empty resume prompts.
-- Resume was kept read-only and does not discover, create, or mutate handoff artifacts automatically.
-
-### Plugin wrapper and plugin-only command UX
-
-- The sidecar was exposed through a pip-installable Hermes plugin entry point without modifying Hermes core.
-- Plugin tools `hermes_handoff_create` and `hermes_handoff_resume` were implemented first.
-- The plugin wrapper reused existing CLI/business logic instead of duplicating packet, git-state, validation, redaction, or Markdown code.
-- A plugin-only `/handoff` command surface was added for compatible runtimes that expose `register_command`.
-- Compatibility handling was added so tool registration remains useful even when command registration is absent or incompatible.
-- `/handoff create`, implicit create forms, `/handoff resume`, and `/handoff help` were verified through fake-context tests.
-
-### Automatic task-state collection
-
-- Direction B, automatic task-state collection, was selected and implemented as an opt-in sidecar improvement.
-- The collector scans safe repo-local evidence such as `PROGRESS.md`, `README.md`, and docs when available.
-- Manual CLI/plugin values remain authoritative when auto collection is enabled.
-- Missing docs, non-git repos, unreadable files, or weak signals degrade to valid packets rather than hard failures.
-- Collected text remains subject to redaction and validation before any write.
-
-### Public repo hardening and runtime compatibility
-
-- Public metadata, licensing, maintainer identity, and GitHub-facing usage docs were aligned for public readiness.
-- Usage docs were added or strengthened in Traditional Chinese, Simplified Chinese, and English.
-- CI was added for install, tests, compile checks, secret scanning, and whitespace checks on Python 3.11/3.12.
-- Runtime smoke tests were made portable through `HERMES_AGENT_SOURCE` and `HERMES_AGENT_PYTHON` overrides.
-- The Hermes runtime plugin smoke test verifies entry-point discovery and plugin registration while using isolated temporary runtime state.
-
-### Advisory trigger policy, doctor, and prepare
-
-- The automatic handoff trigger policy was designed as advisory-first and sidecar/plugin-based.
-- The trigger levels were documented as `observe`, `advise`, `prepare`, and `block`.
-- `hermes-handoff doctor` was implemented as a read-only recommendation command.
-- `hermes-handoff prepare` was implemented as a read-only preview command.
-- `hermes_handoff_prepare` and plugin-only `/handoff prepare` were implemented for compatible Hermes plugin runtimes.
-- The boundary `doctor` recommends, `prepare` previews, and `create` writes was established and documented.
-- The older phase-plan wording near the top of this file was superseded by this current-status-first document.
+| Priority | Item | Depends on |
+|:---:|------|------------|
+| P0 | Two-week dogfood + threshold tuning | Real usage data |
+| P1 | Output readability tuning for non-technical users | Dogfood feedback |
+| P2 | Daemon background monitor (v0.4+) | Design boundaries defined in TRIGGER_POLICY.md |

@@ -250,9 +250,11 @@ plugins:
 
 安裝或修改 config 後，請重啟 Hermes CLI/gateway。執行中的 Hermes process 會 cache plugin discovery。
 
-載入後，wrapper 會註冊三個 tools：
+載入後，wrapper 會註冊五個 tools：
 
+- `hermes_handoff_doctor`：回傳 read-only handoff 建議。
 - `hermes_handoff_prepare`：建立 read-only prepare preview；不會寫 packet files，且沒有必填欄位。
+- `hermes_handoff_watch`：執行與 `hermes-handoff watch` 相同的一次性 read-only advisory 檢查。
 - `hermes_handoff_create`：建立 Markdown + JSON handoff packet。
 - `hermes_handoff_resume`：從 handoff JSON 取出 resume prompt。
 
@@ -261,7 +263,63 @@ plugin create schema 必填：
 - `goal`
 - `next_task`
 
-目前沒有 watch 的 plugin tool 或 gateway/slash command。一次性 advisory auto-trigger MVP 請使用 CLI `hermes-handoff watch`。
+watch 的 plugin tool 與 gateway slash command 已可使用（`/handoff watch ...`）。若要 programmatic use，請直接呼叫 `hermes_handoff_watch` tool。
+
+## 自動觸發 (auto-watch) v0.3.0
+
+Auto-watch 讓 Hermes 在你忘記手動輸入 `/handoff watch` 時，也能自動檢查是否已經適合交接。它沿用上面描述的保守 watch/doctor/prepare 路徑：自動觸發可以提出建議或準備預覽，但**不會**寫入 handoff packet。若要真正建立 packet，請先用 `/handoff prepare` 檢查預覽，再由使用者明確執行 `create`。
+
+### 觸發模式
+
+| 模式 | 如何觸發 | 適合情境 | 補充 |
+| --- | --- | --- | --- |
+| **Gateway Wrapper** | chat gateway 在每次 Hermes 回覆後呼叫 `evaluate_and_log()`。 | 正在進行的 Feishu/Hermes 對話。 | 使用目前對話的 signals，例如 elapsed time、tool-call count、dirty-file count。 |
+| **Cron** | scheduler 依固定週期掃描設定好的 `watch_repos`，例如每 30 分鐘一次。 | 你離開電腦但工作仍在累積時。 | 只使用 repo-local signals；repo 清單必須明確設定。 |
+| **Manual** | 使用者手動執行 `/handoff watch`，或直接呼叫 `hermes_handoff_watch`。 | 想立即檢查的任何時候。 | 行為與 CLI `hermes-handoff watch` 相同，都是 read-only advisory。 |
+
+### 通知格式
+
+Feishu 通知刻意保持簡短，而且不包含 repo 名稱、檔案路徑或檔案內容：
+
+```text
+⚠️ 有一個開發中的專案建議交接
+已開發約 45 分鐘，使用 80+ 次工具，12 個檔案有變更
+→ 回對話中輸入 /handoff prepare 來預覽交接內容
+```
+
+### Config 範例
+
+請把 auto-watch config 放在 `hermes-continuation` plugin config 下。以下 thresholds 對應 README quick-start 的設定形狀，可依部署環境調整：
+
+```yaml
+plugins:
+  enabled:
+    - hermes-continuation
+  disabled: []
+  config:
+    hermes-continuation:
+      auto_watch:
+        enabled: true
+        tool_calls_threshold: 5        # active session 達到至少 5 次 tool calls 時通知
+        elapsed_minutes_threshold: 30  # active session 執行至少 30 分鐘時通知
+        cooldown_minutes: 20           # 兩次通知至少間隔 20 分鐘，避免洗版
+        notify_levels: ["advise", "prepare", "block"]
+      watch_repos:                     # 僅供 cron mode：明確列出要掃描的 repos
+        - /path/to/repo
+```
+
+操作重點：
+
+- Gateway Wrapper mode 需要 gateway integration 在 Hermes 回覆後呼叫 `evaluate_and_log()`。
+- Cron mode 只掃描 `watch_repos` 列出的 paths；請維持清單精簡且有意識地設定。
+- Manual mode 即使沒有啟用 gateway/cron 自動整合也可使用。
+- 一鍵關閉：將 `auto_watch.enabled` 設為 `false`，即可立即停止所有自動觸發通知。
+
+安全邊界：
+
+- 通知永遠不包含 repo 名稱、檔案路徑或檔案內容。
+- Auto-watch 僅 read-only/advisory：不建立 `.hermes/handoffs/`、不寫入 packet files，也不會 hidden `create`。
+- 通知只是提醒你回去檢查 preview；建立 packet 仍需要使用者明確操作。
 
 ## 斜線指令
 
@@ -319,7 +377,7 @@ Resume 並加上 Markdown wrapper：
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
 ```
 
-單獨輸入 `/handoff` 或 `/handoff help` 只會顯示 help，不會建立資訊不足的 packet。Plugin `auto_task_state` 是選擇性功能，邊界與 CLI `--auto-task-state` 相同。目前尚未實作 plugin/gateway `/handoff watch` subcommand。
+單獨輸入 `/handoff` 或 `/handoff help` 只會顯示 help，不會建立資訊不足的 packet。Plugin `auto_task_state` 是選擇性功能，邊界與 CLI `--auto-task-state` 相同。Plugin/gateway `/handoff watch` 已可透過 `hermes_handoff_watch` tool 在相容 runtime 使用。
 
 ## 輸出與 artifacts 政策
 
@@ -473,11 +531,11 @@ PY
 
 ### Tools 存在但 `/handoff` 不見
 
-你的 Hermes build 可能尚未提供 plugin slash-command registration。這在較舊版本是預期情況。Wrapper 仍會註冊 `hermes_handoff_create` 與 `hermes_handoff_resume` tools。
+你的 Hermes build 可能尚未提供 plugin slash-command registration。這在較舊版本是預期情況。Wrapper 仍會註冊 `hermes_handoff_prepare`、`hermes_handoff_watch`、`hermes_handoff_create` 與 `hermes_handoff_resume` 等 plugin tools。
 
 ### `/handoff watch` 不見
 
-這是預期情況。Watch 目前只實作為一次性 CLI command `hermes-handoff watch`；尚未提供 plugin/gateway `/handoff watch` command。
+Watch 可透過 CLI command `hermes-handoff watch` 使用，也可透過 plugin tool `hermes_handoff_watch` 使用；只有相容 Hermes runtime 才會顯示 gateway slash command `/handoff watch`。
 
 ### `git status` 出現 handoff files 或 generated artifacts
 

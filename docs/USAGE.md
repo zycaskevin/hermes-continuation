@@ -246,9 +246,11 @@ plugins:
 
 Restart the Hermes CLI/gateway after install or config changes. Plugin discovery is cached inside a running Hermes process.
 
-When loaded, the wrapper registers three tools:
+When loaded, the wrapper registers five tools:
 
+- `hermes_handoff_doctor`: return a read-only handoff recommendation.
 - `hermes_handoff_prepare`: build a read-only prepare preview; it never writes packet files and has no required fields.
+- `hermes_handoff_watch`: run the same one-shot read-only advisory check exposed by `hermes-handoff watch`.
 - `hermes_handoff_create`: create a Markdown + JSON handoff packet.
 - `hermes_handoff_resume`: extract the resume prompt from a handoff JSON.
 
@@ -257,7 +259,63 @@ The tool schema for create requires:
 - `goal`
 - `next_task`
 
-A plugin tool and gateway slash command for watch are now available (`/handoff watch ...`). For programmatic use, call the `hermes_handoff_watch` tool directly.
+A plugin tool and gateway slash command for watch are available (`/handoff watch ...`). For programmatic use, call the `hermes_handoff_watch` tool directly.
+
+## Auto-watch (v0.3.0)
+
+Auto-watch lets Hermes check whether a handoff is overdue without relying on you to remember `/handoff watch`. It uses the same conservative watch/doctor/prepare path described above: automatic triggers can advise or prepare a preview, but they do **not** write handoff packets. If you want a packet, explicitly run `/handoff prepare` to inspect the preview and then run `create` yourself.
+
+### Trigger modes
+
+| Mode | How it is triggered | Best for | Notes |
+| --- | --- | --- | --- |
+| **Gateway Wrapper** | The chat gateway calls `evaluate_and_log()` after each Hermes response. | Active Feishu/Hermes conversations. | Uses fresh conversation signals such as elapsed time, tool-call count, and dirty-file count. |
+| **Cron** | A scheduler scans configured `watch_repos` on an interval, such as every 30 minutes. | Work you may leave running while away. | Uses repository-local signals only; configure the repo list explicitly. |
+| **Manual** | You run `/handoff watch` or call `hermes_handoff_watch` yourself. | Any time you want an immediate check. | Same read-only advisory behavior as the CLI `hermes-handoff watch`. |
+
+### Notification format
+
+Feishu notifications are intentionally brief and do not expose repository names, file paths, or file contents:
+
+```text
+⚠️ A project in progress may need a handoff
+About 45 minutes of work, 80+ tool calls, 12 files changed
+→ Return to the conversation and run /handoff prepare to preview the handoff
+```
+
+### Config example
+
+Add the auto-watch config under the `hermes-continuation` plugin config. The thresholds below match the README quick-start shape and can be tuned per deployment:
+
+```yaml
+plugins:
+  enabled:
+    - hermes-continuation
+  disabled: []
+  config:
+    hermes-continuation:
+      auto_watch:
+        enabled: true
+        tool_calls_threshold: 5        # notify when the active session reaches at least 5 tool calls
+        elapsed_minutes_threshold: 30  # notify when the active session has run for at least 30 minutes
+        cooldown_minutes: 20           # wait at least 20 minutes between notifications
+        notify_levels: ["advise", "prepare", "block"]
+      watch_repos:                     # cron mode only: repos to scan explicitly
+        - /path/to/repo
+```
+
+Operational notes:
+
+- Gateway Wrapper mode requires the gateway integration to call `evaluate_and_log()` after Hermes responses.
+- Cron mode only scans paths listed in `watch_repos`; keep the list narrow and intentional.
+- Manual mode works even when automatic gateway/cron integration is not enabled.
+- One-click off switch: set `auto_watch.enabled: false` to silence all automatic triggers immediately.
+
+Safety boundaries:
+
+- Notifications never include repo names, file paths, or file contents.
+- Auto-watch is read-only/advisory: it does not create `.hermes/handoffs/`, does not write packet files, and does not invoke hidden `create` behavior.
+- The notification is only a prompt to inspect a preview; packet creation still requires an explicit user action.
 
 ## Slash command
 
@@ -315,7 +373,7 @@ Resume with Markdown wrapper:
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
 ```
 
-Bare `/handoff` or `/handoff help` shows help instead of creating an underspecified packet. Plugin `auto_task_state` is optional and follows the same boundaries as CLI `--auto-task-state`. No plugin/gateway `/handoff watch` subcommand is implemented yet.
+Bare `/handoff` or `/handoff help` shows help instead of creating an underspecified packet. Plugin `auto_task_state` is optional and follows the same boundaries as CLI `--auto-task-state`. Plugin/gateway `/handoff watch` is available through the `hermes_handoff_watch` tool on compatible runtimes.
 
 ## Output and artifacts policy
 
@@ -465,7 +523,7 @@ You should see `hermes-continuation`.
 
 ### `/handoff` is missing but tools exist
 
-Your Hermes build may not expose plugin slash-command registration. This is expected on older builds. The wrapper still registers `hermes_handoff_create` and `hermes_handoff_resume` tools.
+Your Hermes build may not expose plugin slash-command registration. This is expected on older builds. The wrapper still registers plugin tools such as `hermes_handoff_prepare`, `hermes_handoff_watch`, `hermes_handoff_create`, and `hermes_handoff_resume`.
 
 ### `/handoff watch` is missing
 

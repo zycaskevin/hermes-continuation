@@ -2,6 +2,17 @@
 
 All notable changes to Hermes Continuation.
 
+## [0.3.0] — 2026-05-12
+
+### Added
+- **Context Monitor** — `context_monitor.py`: auto-collects git changed_files + accepts injected session metrics (tool_calls / elapsed_minutes). Manual values always override auto values.
+- **Auto-Trigger** — `auto_watch.py`: Gateway notification gating with threshold checks, cooldown deduplication, and config `enabled` switch. Includes `evaluate_and_log()` single-call entry point.
+- **Cron Watch** — `handoff_watch_cron.py`: standalone cron script that scans configured repos, with per-repo dedup state tracking (only notifies on new commits).
+- **Watch Logger** — `watch_logger.py`: local JSONL event logger (zero LLM-token cost). Logs level / tool_calls / elapsed / changed_files / trigger source. All fields sanitized, never records repo paths or file contents.
+- **Two-Week Review Script** — `handoff_watch_review.py`: reads accumulated watch logs and prints a summary for threshold tuning (≥50 entries target, <30% false positive target).
+- CI: Python 3.13 support, v0.3.0 module import verification, `handoff_watch_logs` dir excluded from secret scan.
+- Docs: PROJECT_OVERVIEW.md and PROGRESS.md updated for v0.3.0 architecture and dogfood state.
+
 ## [0.2.0] — 2026-05-11
 
 ### Added

@@ -173,6 +173,29 @@ def _cooldown_passed(last_notification: float | None, cooldown_minutes: int) -> 
     return elapsed_seconds >= cooldown_minutes * 60
 
 
+def _log_from_notify(result: dict, config: dict, level: str, notify: bool, cooldown_active: bool) -> None:
+    """Log the watch evaluation outcome (best-effort, never raises)."""
+    try:
+        from .watch_logger import log_watch_event
+
+        recommendation_level = None
+        if isinstance(result.get("recommendation"), dict):
+            recommendation_level = result["recommendation"].get("level")
+        if recommendation_level is None:
+            recommendation_level = level
+
+        log_watch_event(
+            level=level,
+            tool_calls=_extract_int(result, "tool_calls", "tool_call_count"),
+            elapsed_minutes=_extract_int(result, "elapsed", "elapsed_minutes"),
+            changed_files=_changed_file_count(result),
+            recommendation_level=str(recommendation_level),
+            cooldown_active=cooldown_active,
+        )
+    except Exception:
+        pass
+
+
 def should_notify(result: dict, config: dict, last_notification: float | None) -> bool:
     """Return whether a Gateway wrapper should send an auto-watch notification.
 
@@ -230,6 +253,32 @@ def _read_config_file(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError, tomllib.TOMLDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def evaluate_and_log(
+    result: dict,
+    config: dict | None = None,
+    last_notification: float | None = None,
+) -> tuple[bool, bool]:
+    """Evaluate watch result + log the outcome atomically.
+
+    Returns ``(should_send_notification, was_cooldown_active)``.
+    This is the preferred single-call entry point for Gateway wrappers.
+    """
+
+    normalized = _normalize_config(config)
+    level = _level(result)
+    cooldown_active = not _cooldown_passed(last_notification, normalized["cooldown"])
+    notify = should_notify(result, config, last_notification)
+
+    _log_from_notify(
+        result,
+        normalized,
+        level=level,
+        notify=notify,
+        cooldown_active=cooldown_active,
+    )
+    return notify, cooldown_active
 
 
 def load_auto_watch_config() -> dict:

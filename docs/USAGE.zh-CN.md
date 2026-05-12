@@ -250,9 +250,11 @@ plugins:
 
 安装或修改 config 后，请重启 Hermes CLI/gateway。运行中的 Hermes process 会 cache plugin discovery。
 
-加载后，wrapper 会注册三个 tools：
+加载后，wrapper 会注册五个 tools：
 
+- `hermes_handoff_doctor`：返回 read-only handoff 建议。
 - `hermes_handoff_prepare`：创建 read-only prepare preview；不会写 packet files，且没有必填字段。
+- `hermes_handoff_watch`：执行与 `hermes-handoff watch` 相同的一次性 read-only advisory 检查。
 - `hermes_handoff_create`：创建 Markdown + JSON handoff packet。
 - `hermes_handoff_resume`：从 handoff JSON 取出 resume prompt。
 
@@ -261,7 +263,63 @@ plugin create schema 必填：
 - `goal`
 - `next_task`
 
-目前没有 watch 的 plugin tool 或 gateway/slash command。一次性 advisory auto-trigger MVP 请使用 CLI `hermes-handoff watch`。
+watch 的 plugin tool 与 gateway slash command 已可使用（`/handoff watch ...`）。若要 programmatic use，请直接调用 `hermes_handoff_watch` tool。
+
+## 自动触发 (auto-watch) v0.3.0
+
+Auto-watch 让 Hermes 在你忘记手动输入 `/handoff watch` 时，也能自动检查是否已经适合交接。它沿用上面描述的保守 watch/doctor/prepare 路径：自动触发可以提出建议或准备预览，但**不会**写入 handoff packet。如果要真正创建 packet，请先用 `/handoff prepare` 检查预览，再由用户明确执行 `create`。
+
+### 触发模式
+
+| 模式 | 如何触发 | 适合场景 | 补充 |
+| --- | --- | --- | --- |
+| **Gateway Wrapper** | chat gateway 在每次 Hermes 回复后调用 `evaluate_and_log()`。 | 正在进行的 Feishu/Hermes 对话。 | 使用当前对话的 signals，例如 elapsed time、tool-call count、dirty-file count。 |
+| **Cron** | scheduler 按固定周期扫描配置好的 `watch_repos`，例如每 30 分钟一次。 | 你离开电脑但工作仍在累积时。 | 只使用 repo-local signals；repo 列表必须明确配置。 |
+| **Manual** | 用户手动执行 `/handoff watch`，或直接调用 `hermes_handoff_watch`。 | 想立即检查的任何时候。 | 行为与 CLI `hermes-handoff watch` 相同，都是 read-only advisory。 |
+
+### 通知格式
+
+Feishu 通知刻意保持简短，而且不包含 repo 名称、文件路径或文件内容：
+
+```text
+⚠️ 有一个开发中的项目建议交接
+已开发约 45 分钟，使用 80+ 次工具，12 个文件有变更
+→ 回对话中输入 /handoff prepare 来预览交接内容
+```
+
+### Config 示例
+
+请把 auto-watch config 放在 `hermes-continuation` plugin config 下。以下 thresholds 对应 README quick-start 的配置形状，可按部署环境调整：
+
+```yaml
+plugins:
+  enabled:
+    - hermes-continuation
+  disabled: []
+  config:
+    hermes-continuation:
+      auto_watch:
+        enabled: true
+        tool_calls_threshold: 5        # active session 达到至少 5 次 tool calls 时通知
+        elapsed_minutes_threshold: 30  # active session 运行至少 30 分钟时通知
+        cooldown_minutes: 20           # 两次通知至少间隔 20 分钟，避免刷屏
+        notify_levels: ["advise", "prepare", "block"]
+      watch_repos:                     # 仅供 cron mode：明确列出要扫描的 repos
+        - /path/to/repo
+```
+
+操作重点：
+
+- Gateway Wrapper mode 需要 gateway integration 在 Hermes 回复后调用 `evaluate_and_log()`。
+- Cron mode 只扫描 `watch_repos` 列出的 paths；请保持列表精简且有意识地配置。
+- Manual mode 即使没有启用 gateway/cron 自动整合也可使用。
+- 一键关闭：将 `auto_watch.enabled` 设为 `false`，即可立即停止所有自动触发通知。
+
+安全边界：
+
+- 通知永远不包含 repo 名称、文件路径或文件内容。
+- Auto-watch 仅 read-only/advisory：不创建 `.hermes/handoffs/`、不写入 packet files，也不会 hidden `create`。
+- 通知只是提醒你回去检查 preview；创建 packet 仍需要用户明确操作。
 
 ## 斜线指令
 
@@ -473,11 +531,11 @@ PY
 
 ### Tools 存在但 `/handoff` 不见
 
-你的 Hermes build 可能尚未提供 plugin slash-command registration。这在较旧版本是预期情况。Wrapper 仍会注册 `hermes_handoff_create` 与 `hermes_handoff_resume` tools。
+你的 Hermes build 可能尚未提供 plugin slash-command registration。这在较旧版本是预期情况。Wrapper 仍会注册 `hermes_handoff_prepare`、`hermes_handoff_watch`、`hermes_handoff_create` 与 `hermes_handoff_resume` 等 plugin tools。
 
 ### `/handoff watch` 不见
 
-这是预期情况。Watch 目前只实现为一次性 CLI command `hermes-handoff watch`；尚未提供 plugin/gateway `/handoff watch` command。
+Watch 可通过 CLI command `hermes-handoff watch` 使用，也可通过 plugin tool `hermes_handoff_watch` 使用；只有兼容 Hermes runtime 才会显示 gateway slash command `/handoff watch`。
 
 ### `git status` 出现 handoff files 或 generated artifacts
 

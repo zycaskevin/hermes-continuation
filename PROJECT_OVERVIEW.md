@@ -1,12 +1,12 @@
 # Hermes Continuation — 專案總覽
 
-> **版本：** v0.2.0 | **日期：** 2026-05-12 | **作者：** Arthur Liao
+> **版本：** v0.3.0 | **日期：** 2026-05-12 | **作者：** Arthur Liao
 
 ---
 
 ## 一句話講這是什麼
 
-**當你跟 Hermes Agent 進行長時間開發任務時，幫你做一份「交接包」讓下一個對話可以無縫接手繼續工作。**
+**當你跟 Hermes Agent 進行長時間開發任務時，幫你做一份「交接包」讓下一個對話可以無縫接手繼續工作。從 v0.3.0 開始，它還能自動偵測開發時長、工具呼叫數、檔案變更量，在不吵到你的前提下主動提醒「該交接了」。**
 
 ---
 
@@ -18,8 +18,9 @@
 2. **進度丟失** — 你做了 10 個步驟，新對話要從頭問起
 3. **不確定做到哪** — 哪些測過了？哪些還沒？改了什麼檔案？
 4. **安全風險** — 手動整理交接筆記時可能不小心貼到密鑰或 token
+5. **忘了交接** — 連續開發 45 分鐘、call 了 80 次工具、改了 12 個檔案，但你完全忘了要做交接
 
-這個專案解決的就是：**在你想要換對話的時候，自動產生一份結構化的交接資料。**
+這個專案解決的就是：**在你想要換對話的時候，自動產生一份結構化的交接資料，甚至在你忘記的時候自己提醒你。**
 
 ---
 
@@ -31,19 +32,6 @@
 
 ```bash
 pip install -e .
-```
-
-#### 基本用法
-
-```bash
-# 寫一份交接包
-hermes-handoff create \
-  --repo . \
-  --goal "完成 Dashboard QA" \
-  --next "執行 build 和 browser smoke test"
-
-# 新對話接手
-hermes-handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
 #### 五個命令
@@ -58,9 +46,27 @@ hermes-handoff resume .hermes/handoffs/<timestamp>-handoff.json
 
 **安全設計原則：只有 `create` 會寫檔案，其他四個都是 read-only。**
 
----
+### 2. 自動觸發（v0.3.0 新增）🆕
 
-### 2. Hermes 插件（推薦）
+不用手動下指令，Hermes 會在「該交接了」的時候自動提醒你：
+
+```
+⚠️ 有一個開發中的專案建議交接
+已開發約 45 分鐘，使用 80+ 次工具，12 個檔案有變更
+→ 回對話中輸入 /handoff prepare 來預覽交接內容
+```
+
+**三種觸發方式：**
+
+| 方式 | 說明 | 適合場景 |
+|------|------|----------|
+| **Gateway Wrapper** | Hermes 每次回覆完自動檢查，滿足條件就推送通知 | 日常對話中 |
+| **Cron 定時掃描** | 每 30 分鐘掃描一次所有監控中的 repo | 你不在線上的時候 |
+| **手動 `/handoff watch`** | 在對話中直接下指令 | 任何時候 |
+
+**所有自動觸發都是 read-only**：不寫檔案、不讀對話內容、不洩漏 repo 名稱、可隨時關閉。
+
+### 3. Hermes 插件（推薦）
 
 在你的 Hermes Agent 裡面直接使用，不需要跳出到終端機：
 
@@ -95,9 +101,7 @@ plugins:
 | `hermes_handoff_watch` | 一次性觀察掃描 |
 | `hermes_handoff_doctor` | 分析並建議是否該交接 |
 
----
-
-### 3. 交接包長什麼樣子？
+### 4. 交接包長什麼樣子？
 
 每份交接包包含兩個檔案：
 
@@ -120,52 +124,66 @@ plugins:
 
 ## 目前狀態
 
-### 已完成（v0.2.0）
+### 已完成（v0.3.0）
 
 | 功能 | 狀態 |
 |------|:---:|
 | CLI：create / resume / doctor / prepare / watch | ✅ |
+| Context Monitor：自動收集 git 狀態 + session metrics | ✅ 🆕 |
+| Gateway 自動觸發：通知閘控 + cooldown + config 開關 | ✅ 🆕 |
+| Cron 定時 watch：定期掃描 + 去重追蹤 | ✅ 🆕 |
+| Watch 日誌記錄：JSONL log（零 token 成本） | ✅ 🆕 |
 | 插件：5 個 tools + 5 個 slash commands | ✅ |
 | 自動任務狀態收集（`--auto-task-state`） | ✅ |
 | 安全：私鑰阻擋 + API key 遮蔽 + 紅線掃描 | ✅ |
-| CI：pytest + compileall + secret scan + whitespace | ✅ |
+| CI：pytest + compileall + secret scan + whitespace（3.11/3.12/3.13）| ✅ |
 | 多語言文件（繁中 / 簡中 / English） | ✅ |
-| CHANGELOG.md + git tag v0.2.0 | ✅ |
+| CHANGELOG.md | ✅ |
 
 ### 測試覆蓋
 
-- **89 tests** 全數通過
-- Python 3.11 + 3.12
+- **124 tests** 全數通過 🆕（v0.2.0: 89 tests → v0.3.0: +35 tests）
+- Python 3.11 + 3.12 + 3.13 🆕
 - GitHub Actions 自動化 gate
+
+### v0.3.0 架構總覽
+
+```
+觸發來源                  處理層                 通知目標
+┌──────────┐          ┌──────────┐          ┌──────────┐
+│ Gateway  │ ──┬───→  │          │          │ Feishu   │
+│ Wrapper  │   │      │  Watch   │ ──────→  │ 報告群    │
+└──────────┘   │      │  Engine  │          └──────────┘
+               │      │          │
+┌──────────┐   │      │ (複用     │          ┌──────────┐
+│ Cron     │ ──┤      │ v0.2.0   │          │ Gateway  │
+│ Jobs     │   │      │ doctor   │ ──────→  │ Session  │
+└──────────┘   │      │ prepare  │          └──────────┘
+               │      │ watch)   │
+┌──────────┐   │      └──────────┘
+│ Context  │ ──┘      ┌──────────┐
+│ Monitor  │          │  Logger  │ → 本地 JSONL
+└──────────┘          └──────────┘
+```
 
 ---
 
 ## 未來方向
 
-### 🔜 短期（v0.2.x）
+### 🔜 短期（v0.3.x）
 
 | 優先級 | 項目 | 說明 |
 |:---:|------|------|
-| P1 | **實機 dogfood 優化** | 在 Arthur 日常工作中實際使用，觀察 Feishu/Telegram 訊息可讀性，調整輸出格式 |
-| P2 | **README 更新** | 補上 plugin watch 的範例（目前 README 說 watch 是 CLI-only，但 v0.2.0 已有 plugin 版） |
-| P3 | **輸出可讀性調校** | 目前輸出偏技術化，非程式背景的人可能覺得不好讀，需要簡化 |
+| P1 | **兩週 dogfood + 閾值調校** | 收集 ≥50 筆日誌，根據真實使用數據調整觸發門檻 |
+| P2 | **輸出可讀性調校** | 目前輸出偏技術化，非程式背景的人可能覺得不好讀 |
 
-### 🟡 中期（v0.3.0）
-
-| 優先級 | 項目 | 說明 |
-|:---:|------|------|
-| P1 | **自動觸發策略** | 讓 Hermes 在特定條件下（工具呼叫 > 5、時間 > 30 分鐘、檔案大量變更）主動提醒「要交接了」 |
-| P2 | **Gateway session 整合** | 讓 `/handoff watch` 可以在 Gateway 模式中被 Hermes 自動呼叫，不需要人工下指令 |
-| P3 | **Cron 定時 watch** | 用 cronjob 定期掃描開發中的 repo，自動判斷是否需要交接 |
-
-### 🔴 長期（v0.4+）
+### 🟡 中期（v0.4+）
 
 | 優先級 | 項目 | 說明 |
 |:---:|------|------|
-| P1 | **Daemon 背景監控** | 常駐進程，持續監控開發狀態，自動觸發交接建議（安全邊界已定義在 policy 文件中） |
-| P2 | **跨 Agent 交接** | 不只在 Hermes 對話間傳遞，也能讓其他 Agent 讀取交接包繼續工作 |
+| P1 | **Daemon 背景監控** | 常駐進程，持續監控開發狀態（安全邊界已定義） |
+| P2 | **跨 Agent 交接** | 讓其他 Agent 也能讀取交接包繼續工作 |
 | P3 | **雲端同步** | 交接包上傳到 Supabase / 雲端，跨機器共享 |
-| P4 | **Dashboard 視覺化** | Web 介面查看所有進行中的任務交接狀態 |
 
 ### 明確不在範圍內（Non-goals）
 
@@ -190,6 +208,8 @@ plugins:
 | 紅線掃描 | CI 每次 push 自動掃描，抓到就擋 |
 | 分級控制 | `block` 等級下不顯示任何 create 指令 |
 | 純讀取 | doctor / prepare / watch 永遠不寫檔案 |
+| 通知安全 | 自動通知不含 repo 名稱、路徑、檔案內容 🆕 |
+| 一鍵關閉 | `auto_watch.enabled: false` → 全部自動觸發即停 🆕 |
 
 ---
 

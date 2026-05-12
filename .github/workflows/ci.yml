@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout
@@ -32,6 +32,12 @@ jobs:
           python -m compileall -q src tests
           python -m py_compile src/hermes_continuation/*.py tests/*.py
 
+      - name: Verify new v0.3.0 modules import cleanly
+        run: |
+          python -c "from hermes_continuation.context_monitor import collect_context"
+          python -c "from hermes_continuation.auto_watch import should_notify, evaluate_and_log, format_notification"
+          python -c "from hermes_continuation.watch_logger import log_watch_event, read_watch_log"
+
       - name: Lightweight secret scan
         run: |
           python - <<'PY'
@@ -44,7 +50,7 @@ jobs:
           include_prefixes = ('src/', 'tests/', 'docs/', '.github/workflows/', '')
           skip_dirs = {
               '.git', '.hermes', '_knowledge_base', 'graphify-out',
-              '.pytest_cache', '__pycache__', 'caches'
+              '.pytest_cache', '__pycache__', 'caches', 'handoff_watch_logs'
           }
           patterns = [
               re.compile(r'(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*["\'](?!\[REDACTED\])[A-Za-z0-9_\-]{8,}["\']'),
@@ -71,7 +77,7 @@ jobs:
                   or rel_str.startswith('tests/')
                   or rel_str.startswith('docs/')
                   or rel_str.startswith('.github/workflows/')
-                  or rel_str in {'README.md', 'PROGRESS.md', 'pyproject.toml', 'CHANGELOG.md'}
+                  or rel_str in {'README.md', 'PROGRESS.md', 'PROJECT_OVERVIEW.md', 'pyproject.toml', 'CHANGELOG.md'}
               ):
                   continue
               text = path.read_text(encoding='utf-8', errors='ignore')

@@ -1,8 +1,8 @@
 # Hermes Continuation
 
-`hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work.
+`hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work — and from v0.3.0, it can also **proactively remind you** when a handoff is overdue.
 
-The current MVP: `doctor` recommends, `prepare` previews, `watch` performs a one-shot read-only advisory check, `create` writes a local Markdown + JSON handoff packet, and `resume` reads it for a fresh session. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or run a daemon.
+The current feature set: `doctor` recommends, `prepare` previews, `watch` performs one-shot read-only advisory checks, `create` writes a local Markdown + JSON handoff packet, and `resume` reads it for a fresh session. **Auto-trigger** (v0.3.0) optionally pushes handoff reminders to Feishu via Gateway wrapper and/or cron jobs. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or run a daemon.
 
 ## Usage guides
 
@@ -17,6 +17,7 @@ Additional reference docs:
 - [Resume command behavior](docs/RESUME_COMMAND.md)
 - [Handoff packet schema](docs/HANDOFF_SCHEMA.md)
 - [Examples](docs/EXAMPLES.md)
+- [Project overview (Chinese)](PROJECT_OVERVIEW.md)
 
 ## What it creates
 
@@ -101,6 +102,42 @@ hermes-handoff watch \
 
 Plain-language boundary: `doctor` recommends whether a handoff is useful; `prepare` builds a read-only preview and may show a safe `hermes-handoff create ...` command; `create` writes `.hermes/handoffs/` packet files; `watch` observes/advises/previews through existing doctor/prepare helpers. If safety blockers are found, the level is `block`, secret values are suppressed, and no create command is shown. To write a packet after a preview, the user must explicitly run the shown `create` command or invoke create through the plugin.
 
+## Auto-watch (v0.3.0)
+
+Instead of remembering to run `/handoff watch` yourself, Hermes can check automatically and notify you via Feishu when a handoff is overdue:
+
+```
+⚠️ 有一個開發中的專案建議交接
+已開發約 45 分鐘，使用 80+ 次工具，12 個檔案有變更
+→ 回對話中輸入 /handoff prepare 來預覽交接內容
+```
+
+### Three trigger modes
+
+| Mode | How it works | Best for |
+|------|-------------|----------|
+| **Gateway Wrapper** | After every Hermes response, call `evaluate_and_log()` | Active conversations |
+| **Cron Jobs** | Scan configured repos every 30 min | When you're away |
+| **Manual** `/handoff watch` | You run it yourself | Any time |
+
+### Quick config
+
+```yaml
+plugins:
+  config:
+    hermes-continuation:
+      auto_watch:
+        enabled: true
+        tool_calls_threshold: 5      # notify when ≥5 tool calls
+        elapsed_minutes_threshold: 30  # notify when ≥30 min
+        cooldown_minutes: 20           # don't spam — wait 20 min between pings
+        notify_levels: ["advise", "prepare", "block"]
+      watch_repos:                     # cron mode: repos to scan
+        - /home/zycas/hermes-continuation
+```
+
+One-click off switch: set `enabled: false` to silence all auto-triggers instantly — no downgrade needed. All auto-triggers are **read-only**, never write packets, and never include repo names or file paths in notifications.
+
 ## Hermes plugin quick start
 
 The package exposes this entry point:
@@ -131,7 +168,7 @@ After restarting Hermes, builds with plugin slash-command support may expose:
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 ```
 
-The plugin also registers **four tools**: `hermes_handoff_prepare`, `hermes_handoff_watch`, `hermes_handoff_create`, and `hermes_handoff_resume`. Plugin `prepare` and `watch` are read-only and have no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` and `/handoff watch ...` expose the same behavior through optional slash commands.
+The plugin also registers **five tools**: `hermes_handoff_prepare`, `hermes_handoff_watch`, `hermes_handoff_create`, `hermes_handoff_resume`, and `hermes_handoff_doctor`. Plugin `prepare` and `watch` are read-only and have no required fields; plugin `create` requires `goal` and `next_task`. On compatible runtimes, `/handoff prepare ...` and `/handoff watch ...` expose the same behavior through optional slash commands.
 
 ## Safety boundaries
 
@@ -144,6 +181,8 @@ The plugin also registers **four tools**: `hermes_handoff_prepare`, `hermes_hand
 - Safety blockers return `block`, suppress safe create commands, and do not print secret values.
 - No full Hermes transcript parsing is performed.
 - Auto task-state collection is opt-in and limited to conservative repo-local Markdown files.
+- **Auto-watch notifications never include repo names, file paths, or content** (v0.3.0).
+- **Auto-watch can be disabled instantly** via `auto_watch.enabled: false` (v0.3.0).
 - Generated/runtime artifacts such as `.hermes/handoffs/`, `graphify-out/`, `_knowledge_base/`, `.pytest_cache/`, `__pycache__/`, and `*.egg-info` should not be committed.
 
 ## Verification
