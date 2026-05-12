@@ -165,7 +165,7 @@ Watch boundaries:
 - no daemon by default: it evaluates once and exits;
 - missing `goal` or `next` degrades to `advise` instead of fabricating preview state;
 - `block` results suppress secret values and safe create commands;
-- no plugin/gateway `/handoff watch` exists yet; this MVP exposes watch only as CLI `hermes-handoff watch`.
+- plugin/gateway `/handoff watch` is available as a plugin tool; see the plugin documentation for details.
 
 Plain-language side-effect boundary: `doctor` recommends, `prepare` previews, `create` writes, and `watch` observes/advises/previews through existing doctor/prepare helpers.
 
@@ -257,7 +257,7 @@ The tool schema for create requires:
 - `goal`
 - `next_task`
 
-There is no plugin tool or gateway/slash command for watch yet. Use CLI `hermes-handoff watch` for the one-shot advisory auto-trigger MVP.
+A plugin tool and gateway slash command for watch are now available (`/handoff watch ...`). For programmatic use, call the `hermes_handoff_watch` tool directly.
 
 ## Slash command
 
@@ -469,7 +469,7 @@ Your Hermes build may not expose plugin slash-command registration. This is expe
 
 ### `/handoff watch` is missing
 
-That is expected. Watch is currently implemented only as the one-shot CLI command `hermes-handoff watch`; no plugin/gateway `/handoff watch` command exists yet.
+Watch is available as both the CLI command `hermes-handoff watch` and the plugin tool `hermes_handoff_watch` (accessible via `/handoff watch` on compatible Hermes runtimes).
 
 ### Handoff files or generated artifacts appear in `git status`
 
@@ -508,7 +508,7 @@ Before opening a PR or asking someone to commit:
 - Keep examples secret-safe and use obvious fake placeholders only.
 - Preserve product truth: this MVP recommends/previews/creates/resumes handoff packets and offers one-shot CLI watch advice; it does not auto-restart sessions, parse full transcripts, run background watch daemons, or perform hidden writes.
 - Keep `doctor` and `prepare` read-only; they must not write `.hermes/handoffs/` packet files.
-- Keep `watch` read-only/advisory and CLI-only until a separate plugin/gateway watch task is approved.
+- Keep `watch` read-only/advisory; automatic writes remain out of scope unless separately approved.
 - Keep `create` requiring `--goal` and `--next` in the CLI.
 - Keep plugin `create` requiring `goal` and `next_task`.
 - Keep auto task-state collection opt-in only.

@@ -88,7 +88,7 @@ info = continuation[0]
 assert info["source"] == "entrypoint", info
 assert info["enabled"] is True, info
 assert info["error"] is None, info
-assert info["tools"] == 4, info
+assert info["tools"] == 5, info
 assert info["commands"] == 1, info
 
 create_entry = registry.get_entry("hermes_handoff_create")

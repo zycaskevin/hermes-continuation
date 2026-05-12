@@ -10,6 +10,7 @@ from typing import Any
 
 from .git_state import collect_git_state
 from .packet import build_packet
+from .doctor import evaluate_handoff_recommendation, format_recommendation
 from .prepare import build_prepare_preview, format_prepare_preview
 from .watch import build_watch_result, format_watch_result
 from .redaction import RedactionBlocked
@@ -22,10 +23,11 @@ CREATE_TOOL = "hermes_handoff_create"
 RESUME_TOOL = "hermes_handoff_resume"
 PREPARE_TOOL = "hermes_handoff_prepare"
 WATCH_TOOL = "hermes_handoff_watch"
+DOCTOR_TOOL = "hermes_handoff_doctor"
 HANDOFF_COMMAND = "handoff"
 
 
-_HANDOFF_ARGS_HINT = "create <json|key=value>|resume <handoff.json>|prepare <json|key=value>|watch <json|key=value>"
+_HANDOFF_ARGS_HINT = "create <json|key=value>|resume <handoff.json>|prepare <json|key=value>|watch <json|key=value>|doctor <json|key=value>"
 
 _HANDOFF_HELP = """Hermes handoff command usage:
 
@@ -36,12 +38,15 @@ _HANDOFF_HELP = """Hermes handoff command usage:
 /handoff prepare repo_path=. goal="Current goal" next_task="Next step" auto_task_state=true
 /handoff watch {"repo_path":".","goal":"Current goal","next_task":"Next step","tool_calls":10,"elapsed_minutes":35}
 /handoff watch repo_path=. goal="Current goal" next_task="Next step" tool_calls=10 elapsed_minutes=35
+/handoff doctor {"repo_path":".","goal":"Current goal","next_task":"Next step","auto_task_state":true}
+/handoff doctor repo_path=. goal="Current goal" next_task="Next step" auto_task_state=true
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 /handoff resume {"handoff_json":".hermes/handoffs/<timestamp>-handoff.json","markdown":true}
 
 Notes:
 - Bare /handoff shows this help instead of creating an underspecified packet.
 - Create requires goal and next_task, matching hermes_handoff_create.
+- Doctor is read-only; it analyzes local signals and recommends handoff actions.
 - Prepare is read-only; it previews advisory state and never writes packet files.
 - Watch is read-only one-shot advisory evaluation using local signals and thresholds.
 - auto_task_state is opt-in and conservatively reads repo-local docs only.
@@ -166,7 +171,7 @@ def _split_handoff_command(raw_args: str) -> tuple[str, str]:
     verb = first.strip().lower()
     if verb in {"help", "--help", "-h"}:
         return "help", ""
-    if verb in {"create", "resume", "prepare", "watch"}:
+    if verb in {"create", "resume", "prepare", "watch", "doctor"}:
         return verb, rest.strip() if sep else ""
     if text.startswith("{") or "=" in first:
         return "create", text
@@ -211,6 +216,29 @@ def _format_watch_command_result(result: dict[str, Any]) -> str:
     if not result.get("success"):
         return f"Handoff watch failed: {result.get('error', 'unknown error')}"
     return format_watch_result(result)
+
+
+def _format_doctor_command_result(result: dict[str, Any]) -> str:
+    if not result.get("success"):
+        return f"Handoff doctor failed: {result.get('error', 'unknown error')}"
+    recommendation = result.get("recommendation")
+    if not isinstance(recommendation, dict):
+        return "Handoff doctor failed: handler returned missing recommendation"
+    from .doctor import DoctorRecommendation
+    rec = DoctorRecommendation(
+        level=recommendation.get("level", "observe"),
+        summary=recommendation.get("summary", ""),
+        recommendation=recommendation.get("recommendation", ""),
+        reasons=recommendation.get("reasons", []),
+        blockers=recommendation.get("blockers", []),
+        signals=recommendation.get("signals", []),
+        repo=recommendation.get("repo", {}),
+        verification=recommendation.get("verification", {}),
+        task_state_available=recommendation.get("task_state_available", False),
+        redaction_count=recommendation.get("redaction_count", 0),
+        safe_create_command=recommendation.get("safe_create_command"),
+    )
+    return format_recommendation(rec)
 
 
 def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
@@ -317,6 +345,27 @@ def hermes_handoff_watch(args: dict[str, Any], **_: Any) -> str:
         return _error(exc)
 
 
+def hermes_handoff_doctor(args: dict[str, Any], **_: Any) -> str:
+    """Run a read-only handoff doctor evaluation."""
+    try:
+        repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
+        auto_task_state = _as_bool(args["auto_task_state"]) if "auto_task_state" in args else True
+        result = evaluate_handoff_recommendation(
+            repo_path,
+            goal=str(args.get("goal") or "").strip(),
+            next_task=str(args.get("next_task") or args.get("next") or "").strip(),
+            in_progress=str(args.get("active_task") or args.get("in_progress") or "").strip(),
+            auto_task_state=auto_task_state,
+            explicit_request=_as_bool(args.get("explicit_request")),
+            verified_gates=_as_list(args.get("verified")),
+            failing_gates=_as_list(args.get("failing")),
+            not_run_gates=_as_list(args.get("not_run")),
+        )
+        return _json_response({"success": True, "recommendation": result.to_dict()})
+    except (OSError, ValidationError, ValueError) as exc:
+        return _error(exc)
+
+
 def hermes_handoff_resume(args: dict[str, Any], **_: Any) -> str:
     """Read a handoff JSON and return its resume prompt."""
     try:
@@ -363,6 +412,9 @@ def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
         if verb == "watch":
             result = _load_handler_result(hermes_handoff_watch(_parse_prepare_command_args(payload)))
             return _format_watch_command_result(result)
+        if verb == "doctor":
+            result = _load_handler_result(hermes_handoff_doctor(_parse_prepare_command_args(payload)))
+            return _format_doctor_command_result(result)
         return f"Unknown handoff subcommand: {verb}\n\n{_HANDOFF_HELP}"
     except (json.JSONDecodeError, ValueError) as exc:
         return f"Handoff command error: {exc}\n\n{_HANDOFF_HELP}"
@@ -450,6 +502,28 @@ _WATCH_SCHEMA: dict[str, Any] = {
     },
 }
 
+_DOCTOR_SCHEMA: dict[str, Any] = {
+    "name": DOCTOR_TOOL,
+    "description": "Run a read-only handoff doctor evaluation. Analyzes local signals and recommends handoff actions without writing files.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "repo_path": {"type": "string", "description": "Repository path to inspect. Defaults to the current directory."},
+            "goal": {"type": "string", "description": "Current goal; missing values degrade to advisory output."},
+            "active_task": {"type": "string", "description": "Current in-progress work, if any."},
+            "in_progress": {"type": "string", "description": "Alias for active_task."},
+            "next_task": {"type": "string", "description": "Next recommended task."},
+            "next": {"type": "string", "description": "Alias for next_task."},
+            "auto_task_state": {"type": "boolean", "description": "Read conservative task-state hints from repo docs. Defaults to true."},
+            "explicit_request": {"type": "boolean", "description": "Whether the user explicitly requested a handoff."},
+            "verified": {"type": "array", "items": {"type": "string"}},
+            "failing": {"type": "array", "items": {"type": "string"}},
+            "not_run": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [],
+    },
+}
+
 
 def register(ctx: Any) -> None:
     """Register Hermes continuation tools and optional command."""
@@ -488,6 +562,14 @@ def register(ctx: Any) -> None:
         handler=hermes_handoff_watch,
         description="Run a one-shot read-only handoff watch evaluation.",
         emoji="👀",
+    )
+    register_tool(
+        name=DOCTOR_TOOL,
+        toolset=TOOLSET,
+        schema=_DOCTOR_SCHEMA,
+        handler=hermes_handoff_doctor,
+        description="Run a read-only handoff doctor evaluation.",
+        emoji="🩺",
     )
 
     register_command = getattr(ctx, "register_command", None)

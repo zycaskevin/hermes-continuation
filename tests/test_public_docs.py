@@ -206,14 +206,17 @@ def test_public_docs_state_generated_artifact_exclusions():
 
 
 def test_public_docs_state_watch_is_cli_only_for_now():
-    expected = {
+    """After v0.2.0, watch is available as both CLI and plugin tool — verify docs no longer claim CLI-only."""
+    forbidden = {
         Path("README.md"): ("no plugin/gateway `/handoff watch`", "watch is CLI-only"),
-        Path("docs/USAGE.md"): ("no plugin/gateway `/handoff watch`", "CLI `hermes-handoff watch`"),
-        Path("docs/USAGE.zh-TW.md"): ("沒有 plugin/gateway `/handoff watch`", "CLI `hermes-handoff watch`"),
-        Path("docs/USAGE.zh-CN.md"): ("没有 plugin/gateway `/handoff watch`", "CLI `hermes-handoff watch`"),
+        Path("docs/USAGE.md"): ("no plugin/gateway `/handoff watch`",),
+        Path("docs/USAGE.zh-TW.md"): ("沒有 plugin/gateway `/handoff watch`",),
+        Path("docs/USAGE.zh-CN.md"): ("没有 plugin/gateway `/handoff watch`",),
     }
-    for relative, tokens in expected.items():
-        assert_contains_all(read_doc(relative), f"watch CLI-only boundary in {relative}", tokens)
+    for relative, tokens in forbidden.items():
+        text = read_doc(relative)
+        found = [token for token in tokens if token in text]
+        assert found == [], f"outdated CLI-only watch language in {relative}: {found!r}"
 
 
 def test_public_docs_state_redaction_and_private_key_safety():
