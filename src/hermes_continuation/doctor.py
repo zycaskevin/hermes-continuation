@@ -369,6 +369,9 @@ def format_recommendation(result: DoctorRecommendation) -> str:
         result.summary,
         f"{i18n.fmt_label('recommendation')}: {result.recommendation}",
     ]
+    repo_path = result.repo.get("path", "")
+    if repo_path:
+        lines.insert(1, f"📁 掃描目錄：`{repo_path}`")
     if result.reasons:
         lines.append(f"{i18n.fmt_label('reasons')}:")
         lines.extend(f"  - {reason}" for reason in result.reasons)

@@ -407,9 +407,9 @@ def hermes_handoff_command(raw_args: str = "", **_: Any) -> str:
         if verb == "help":
             return _HANDOFF_HELP
         if verb == "create":
+            if not payload.strip():
+                return _HANDOFF_HELP
             result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(payload)))
-            if not result.get("success") and not payload.strip():
-                return f"{_format_create_command_result(result)}\n\n{_HANDOFF_HELP}"
             return _format_create_command_result(result)
         if verb == "prepare":
             result = _load_handler_result(hermes_handoff_prepare(_parse_prepare_command_args(payload)))
