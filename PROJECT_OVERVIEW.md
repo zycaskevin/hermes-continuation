@@ -77,14 +77,15 @@ plugins:
 重啟 Hermes 後，在對話中直接下指令：
 
 ```
-/handoff create repo_path=. goal="完成 QA" next_task="跑 browser smoke"
+/handoff doctor repo_path=. goal="完成 QA" next_task="跑 browser smoke"
 /handoff prepare repo_path=. goal="完成 QA" next_task="跑 browser smoke"
 /handoff watch repo_path=. goal="完成 QA" next_task="跑 browser smoke" tool_calls=10 elapsed_minutes=45
+/handoff create repo_path=. goal="完成 QA" next_task="跑 browser smoke"
 /handoff resume .hermes/handoffs/<timestamp>-handoff.json
 /handoff help
 ```
 
-插件同時註冊了 **4 個工具**（Hermes 可以自動調用）：
+插件同時註冊了 **5 個工具**（Hermes 可以自動調用）：
 
 | 工具名稱 | 作用 |
 |----------|------|
@@ -92,6 +93,7 @@ plugins:
 | `hermes_handoff_resume` | 讀取交接包 |
 | `hermes_handoff_prepare` | 預覽交接內容 |
 | `hermes_handoff_watch` | 一次性觀察掃描 |
+| `hermes_handoff_doctor` | 分析並建議是否該交接 |
 
 ---
 
@@ -123,7 +125,7 @@ plugins:
 | 功能 | 狀態 |
 |------|:---:|
 | CLI：create / resume / doctor / prepare / watch | ✅ |
-| 插件：4 個 tools + 4 個 slash commands | ✅ |
+| 插件：5 個 tools + 5 個 slash commands | ✅ |
 | 自動任務狀態收集（`--auto-task-state`） | ✅ |
 | 安全：私鑰阻擋 + API key 遮蔽 + 紅線掃描 | ✅ |
 | CI：pytest + compileall + secret scan + whitespace | ✅ |
