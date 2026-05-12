@@ -177,6 +177,8 @@ _FORMAT_LABELS: dict[str, dict[LocaleTag, str]] = {
     "verification_not_run": {"en": "not_run", "zh-TW": "⏳ 尚未執行"},
     "verification_verified": {"en": "verified", "zh-TW": "✅ 已通過"},
     "verification_not_provided": {"en": "not_provided", "zh-TW": "📭 未提供"},
+    "field_goal": {"en": "goal", "zh-TW": "目標"},
+    "field_next_task": {"en": "next task", "zh-TW": "下一步"},
 }
 
 

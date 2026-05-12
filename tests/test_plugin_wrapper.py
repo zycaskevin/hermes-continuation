@@ -397,7 +397,6 @@ def test_handoff_command_prepare_missing_next_is_advise_without_safe_create(tmp_
     assert "交接包預覽" in output
     assert "建議交接" in output
     assert "資訊不完整" in output
-    assert "missing_required_prepare_input" in output
     assert "安全的交接指令" not in output
     assert not (repo / ".hermes" / "handoffs").exists()
 

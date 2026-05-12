@@ -216,9 +216,8 @@ def format_watch_result(result: dict[str, Any]) -> str:
 
     signals = recommendation.get("signals") or []
     if signals:
-        translated = [f"{i18n.signal_label(s)} ({s})" for s in signals]
         lines.append(f"{i18n.fmt_label('signals')}:")
-        lines.extend(f"  - {label}" for label in translated)
+        lines.extend(f"  - {i18n.signal_label(s)}" for s in signals)
 
     if preview is not None:
         lines.append(f"{i18n.fmt_label('prepare_preview_label')}:")

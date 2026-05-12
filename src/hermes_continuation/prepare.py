@@ -157,9 +157,8 @@ def format_prepare_preview(preview: dict[str, Any]) -> str:
 
     signals = preview.get("signals") or []
     if signals:
-        translated = [f"{i18n.signal_label(s)} ({s})" for s in signals]
         lines.append(f"{i18n.fmt_label('signals')}:")
-        lines.extend(f"  - {label}" for label in translated)
+        lines.extend(f"  - {i18n.signal_label(s)}" for s in signals)
 
     command = preview.get("safe_create_command")
     if command:

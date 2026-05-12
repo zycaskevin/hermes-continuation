@@ -318,12 +318,12 @@ def evaluate_handoff_recommendation(
         )
 
     if explicit_request and not has_prepare_input:
-        missing = []
+        missing_fields = []
         if not has_goal:
-            missing.append("goal")
+            missing_fields.append(i18n.fmt_label("field_goal"))
         if not has_next:
-            missing.append("next task")
-        reasons.append(i18n.rec_text("explicit_missing", missing=" and ".join(missing)))
+            missing_fields.append(i18n.fmt_label("field_next_task"))
+        reasons.append(i18n.rec_text("explicit_missing", missing=" + ".join(missing_fields)))
         signals.append("missing_required_prepare_input")
         has_advise_signal = True
     elif (has_goal or has_next) and not has_prepare_input:
@@ -376,9 +376,8 @@ def format_recommendation(result: DoctorRecommendation) -> str:
         lines.append(f"{i18n.fmt_label('blockers')}:")
         lines.extend(f"  - {blocker}" for blocker in result.blockers)
     if result.signals:
-        translated = [f"{i18n.signal_label(s)} ({s})" for s in result.signals]
         lines.append(f"{i18n.fmt_label('signals')}:")
-        lines.extend(f"  - {label}" for label in translated)
+        lines.extend(f"  - {i18n.signal_label(s)}" for s in result.signals)
     if result.safe_create_command:
         lines.append(f"{i18n.fmt_label('safe_create_command')}:")
         lines.append(result.safe_create_command)
