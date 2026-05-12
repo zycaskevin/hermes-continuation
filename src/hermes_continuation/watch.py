@@ -1,10 +1,11 @@
-"""One-shot read-only handoff watch/advisory orchestration."""
+"""One-shot read-only handoff watch/advisory orchestration. Locale-aware (zh-TW)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import i18n
 from .doctor import evaluate_handoff_recommendation
 from .prepare import build_prepare_preview
 
@@ -185,55 +186,56 @@ def build_watch_result(
 
 
 def format_watch_result(result: dict[str, Any]) -> str:
-    """Render a human-readable, secret-safe watch result."""
+    """Render a human-readable, secret-safe, locale-aware watch result."""
 
     recommendation = result.get("recommendation") if isinstance(result.get("recommendation"), dict) else {}
     preview = result.get("preview") if isinstance(result.get("preview"), dict) else None
     level = result.get("level") or recommendation.get("level") or (preview or {}).get("level")
 
     lines = [
-        f"Handoff watch: {level}",
-        "Read-only watch: would_write=false; no handoff packet was created.",
+        f"{i18n.fmt_label('watch_title')}: {i18n.level_label(level)}",
+        i18n.fmt_label("read_only_watch"),
         str(recommendation.get("summary") or ""),
-        f"Recommendation: {recommendation.get('recommendation')}",
+        f"{i18n.fmt_label('recommendation')}: {recommendation.get('recommendation')}",
     ]
 
     watch_signals = result.get("watch_signals") or []
     if watch_signals:
-        lines.append("Watch signals:")
-        lines.extend(f"- {signal}" for signal in watch_signals)
+        lines.append(f"{i18n.fmt_label('watch_signals')}:")
+        lines.extend(f"  - {signal}" for signal in watch_signals)
 
     reasons = recommendation.get("reasons") or []
     if reasons:
-        lines.append("Reasons:")
-        lines.extend(f"- {reason}" for reason in reasons)
+        lines.append(f"{i18n.fmt_label('reasons')}:")
+        lines.extend(f"  - {reason}" for reason in reasons)
 
     blockers = recommendation.get("blockers") or []
     if blockers:
-        lines.append("Blockers:")
-        lines.extend(f"- {blocker}" for blocker in blockers)
+        lines.append(f"{i18n.fmt_label('blockers')}:")
+        lines.extend(f"  - {blocker}" for blocker in blockers)
 
     signals = recommendation.get("signals") or []
     if signals:
-        lines.append("Signals:")
-        lines.extend(f"- {signal}" for signal in signals)
+        translated = [f"{i18n.signal_label(s)} ({s})" for s in signals]
+        lines.append(f"{i18n.fmt_label('signals')}:")
+        lines.extend(f"  - {label}" for label in translated)
 
     if preview is not None:
-        lines.append("Prepare preview:")
-        lines.append("- would_write=false")
-        lines.append(f"- output_dir: {preview.get('output_dir')}")
-        lines.append(f"- safety_status: {preview.get('safety_status')}")
-        lines.append(f"- verification_status: {preview.get('verification_status')}")
+        lines.append(f"{i18n.fmt_label('prepare_preview_label')}:")
+        lines.append(f"  - would_write=false")
+        lines.append(f"  - output_dir: {preview.get('output_dir')}")
+        lines.append(f"  - safety_status: {preview.get('safety_status')}")
+        lines.append(f"  - verification_status: {preview.get('verification_status')}")
         proposed_goal = preview.get("proposed_goal")
         proposed_next = preview.get("proposed_next_task")
         if proposed_goal:
-            lines.append(f"- proposed_goal: {proposed_goal}")
+            lines.append(f"  - proposed_goal: {proposed_goal}")
         if proposed_next:
-            lines.append(f"- proposed_next_task: {proposed_next}")
+            lines.append(f"  - proposed_next_task: {proposed_next}")
         command = preview.get("safe_create_command")
         if command:
-            lines.append("Safe create command (not run by watch):")
-            lines.append(str(command))
+            lines.append(f"  {i18n.fmt_label('safe_create_command')}:")
+            lines.append(f"  {command}")
 
-    lines.append("No create command was run; watch is advisory only.")
+    lines.append(i18n.fmt_label("no_create_command"))
     return "\n".join(line for line in lines if line) + "\n"

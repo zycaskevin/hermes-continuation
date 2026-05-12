@@ -101,9 +101,10 @@ def test_doctor_cli_is_read_only_and_does_not_create_handoffs(tmp_path):
     result = run_cli(["doctor", "--repo", str(tmp_path), "--goal", "Read only", "--next", "Inspect"], tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert "Handoff doctor: prepare" in result.stdout
-    assert "Read-only" in result.stdout
-    assert "Suggested create command:" in result.stdout
+    assert "交接醫生診斷" in result.stdout
+    assert "可準備交接" in result.stdout
+    assert "純讀取" in result.stdout
+    assert "安全的交接指令" in result.stdout
     assert not (tmp_path / ".hermes" / "handoffs").exists()
 
 
@@ -132,6 +133,7 @@ def test_doctor_cli_block_exit_code_and_secret_safe_output(tmp_path):
     )
 
     assert result.returncode == 2
-    assert "Handoff doctor: block" in result.stdout
+    assert "交接醫生診斷" in result.stdout
+    assert "安全阻擋" in result.stdout
     assert dummy_value not in result.stdout
     assert not (tmp_path / ".hermes" / "handoffs").exists()

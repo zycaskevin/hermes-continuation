@@ -1,4 +1,7 @@
-"""Read-only advisory evaluator for handoff recommendations."""
+"""Read-only advisory evaluator for handoff recommendations.
+
+Locale-aware: format functions default to zh-TW (Traditional Chinese) via i18n.
+"""
 
 from __future__ import annotations
 
@@ -7,18 +10,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+from . import i18n
 from .git_state import collect_git_state
 from .redaction import RedactionBlocked, redact_obj, redact_text
 from .task_state import collect_task_state
 
 RecommendationLevel = Literal["observe", "advise", "prepare", "block"]
-
-_LEVEL_SUMMARIES: dict[RecommendationLevel, str] = {
-    "observe": "No handoff recommendation threshold was reached.",
-    "advise": "A handoff may be useful, but required safe state is incomplete or verification needs attention.",
-    "prepare": "Safe explicit state is available to suggest an exact handoff create command.",
-    "block": "Safety checks blocked handoff preparation.",
-}
 
 
 @dataclass(frozen=True)
@@ -127,7 +124,7 @@ def _result(
 ) -> DoctorRecommendation:
     return DoctorRecommendation(
         level=level,
-        summary=_LEVEL_SUMMARIES[level],
+        summary=i18n.level_summary(level),
         recommendation=recommendation,
         reasons=reasons,
         blockers=blockers,
@@ -187,11 +184,11 @@ def evaluate_handoff_recommendation(
     except RedactionBlocked:
         safe_repo = {"path": "[REDACTED]", "git_available": False, "changed_files": []}
         safe_verification = {"verified_gates": [], "failing_gates": [], "not_run_gates": []}
-        blockers.append("Sensitive private-key material was detected in supplied input.")
+        blockers.append(i18n.block_reason("private_key_input"))
         return _result(
             "block",
-            recommendation="Remove or redact the sensitive material before preparing a handoff.",
-            reasons=["Safety blockers override convenience signals."],
+            recommendation=i18n.rec_text("block_private_key"),
+            reasons=[i18n.block_reason("safety_first")],
             blockers=blockers,
             signals=["private_key_detected"],
             repo=safe_repo,
@@ -206,11 +203,11 @@ def evaluate_handoff_recommendation(
         redaction_count += count
     except RedactionBlocked:
         safe_repo = {"path": "[REDACTED]", "git_available": False, "changed_files": []}
-        blockers.append("Sensitive private-key material was detected in repository metadata.")
+        blockers.append(i18n.block_reason("private_key_repo"))
         return _result(
             "block",
-            recommendation="Clean repository metadata before preparing a handoff.",
-            reasons=["Safety blockers override convenience signals."],
+            recommendation=i18n.rec_text("block_private_key"),
+            reasons=[i18n.block_reason("safety_first")],
             blockers=blockers,
             signals=["private_key_detected"],
             repo=safe_repo,
@@ -231,11 +228,11 @@ def evaluate_handoff_recommendation(
             if task_state_available:
                 signals.append("task_state_available")
         except RedactionBlocked:
-            blockers.append("Sensitive private-key material was detected in repository documentation.")
+            blockers.append(i18n.block_reason("private_key_docs"))
             return _result(
                 "block",
-                recommendation="Remove or redact the sensitive material before preparing a handoff.",
-                reasons=["Safety blockers override convenience signals."],
+                recommendation=i18n.rec_text("block_private_key"),
+                reasons=[i18n.block_reason("safety_first")],
                 blockers=blockers,
                 signals=["private_key_detected"],
                 repo=safe_repo,
@@ -247,11 +244,11 @@ def evaluate_handoff_recommendation(
         signals.append("auto_task_state_disabled")
 
     if redaction_count > 0:
-        blockers.append("Sensitive credential-like material was redacted from available state.")
+        blockers.append(i18n.block_reason("secrets_redacted"))
         return _result(
             "block",
-            recommendation="Review and remove credential-like values before preparing a handoff.",
-            reasons=["Safety blockers override convenience signals."],
+            recommendation=i18n.rec_text("block_secrets"),
+            reasons=[i18n.block_reason("safety_first")],
             blockers=blockers,
             signals=[*signals, "sensitive_value_redacted"],
             repo=safe_repo,
@@ -264,23 +261,23 @@ def evaluate_handoff_recommendation(
         signals.append("explicit_request")
     if not safe_repo.get("git_available"):
         signals.append("git_state_incomplete")
-        reasons.append("Git state is unavailable or the path is not a Git work tree.")
+        reasons.append(i18n.reason_message("git_state_incomplete"))
     elif safe_repo.get("changed_files"):
         signals.append("dirty_git_state")
-        reasons.append("Repository has uncommitted changes.")
+        reasons.append(i18n.reason_message("dirty_git_state"))
 
     if failing:
         signals.append("failing_gates")
-        reasons.append("One or more verification gates are currently failing.")
+        reasons.append(i18n.reason_message("failing_gates"))
     if not_run:
         signals.append("not_run_gates")
-        reasons.append("One or more verification gates have not been run.")
+        reasons.append(i18n.reason_message("not_run_gates"))
     if task_state and task_state.get("known_blockers"):
         signals.append("known_blockers")
-        reasons.append("Repository task state lists known blockers.")
+        reasons.append(i18n.reason_message("known_blockers"))
     if task_state and task_state.get("do_not_touch"):
         signals.append("safety_boundaries")
-        reasons.append("Repository task state includes safety boundaries to preserve.")
+        reasons.append(i18n.reason_message("safety_boundaries"))
 
     has_goal = bool(safe_goal)
     has_next = bool(safe_next)
@@ -300,12 +297,16 @@ def evaluate_handoff_recommendation(
         )
         prepare_reasons = list(reasons)
         if explicit_request:
-            prepare_reasons.append("Explicit handoff request has complete safe goal and next-task inputs.")
+            prepare_reasons.append(
+                "Explicit handoff request has complete safe goal and next-task inputs."
+            )
         else:
-            prepare_reasons.append("Complete safe goal and next-task inputs are present.")
+            prepare_reasons.append(
+                "Complete safe goal and next-task inputs are present."
+            )
         return _result(
             "prepare",
-            recommendation="Review the suggested command and run it only if you want to create a handoff packet.",
+            recommendation=i18n.rec_text("prepare_ready"),
             reasons=prepare_reasons,
             blockers=[],
             signals=signals,
@@ -322,21 +323,21 @@ def evaluate_handoff_recommendation(
             missing.append("goal")
         if not has_next:
             missing.append("next task")
-        reasons.append("Explicit handoff request is missing " + " and ".join(missing) + ".")
+        reasons.append(i18n.rec_text("explicit_missing", missing=" and ".join(missing)))
         signals.append("missing_required_prepare_input")
         has_advise_signal = True
     elif (has_goal or has_next) and not has_prepare_input:
-        reasons.append("Only partial prepare input is available; missing goal or next task prevents an exact command.")
+        reasons.append(i18n.rec_text("partial_input"))
         signals.append("missing_required_prepare_input")
         has_advise_signal = True
     elif has_prepare_input and (verification_attention or repo_dirty or not safe_repo.get("git_available")):
-        reasons.append("Complete prepare input exists, but dirty/incomplete repository or verification state keeps this advisory-only.")
+        reasons.append(i18n.rec_text("dirty_but_complete"))
         has_advise_signal = True
 
     if has_advise_signal:
         return _result(
             "advise",
-            recommendation="Consider creating a handoff after resolving blockers or supplying complete safe inputs.",
+            recommendation=i18n.rec_text("advise_default"),
             reasons=reasons or ["A handoff was requested or local state needs attention."],
             blockers=[],
             signals=signals,
@@ -348,7 +349,7 @@ def evaluate_handoff_recommendation(
 
     return _result(
         "observe",
-        recommendation="Continue working; no read-only handoff advisory is needed right now.",
+        recommendation=i18n.rec_text("observe_default"),
         reasons=["Repository state is clean and no handoff or verification signals were provided."],
         blockers=[],
         signals=signals,
@@ -360,24 +361,26 @@ def evaluate_handoff_recommendation(
 
 
 def format_recommendation(result: DoctorRecommendation) -> str:
-    """Render a human-readable, secret-safe recommendation."""
+    """Render a human-readable, secret-safe, locale-aware recommendation."""
+    loc = i18n.current_locale()
 
     lines = [
-        f"Handoff doctor: {result.level}",
+        f"{i18n.fmt_label('doctor_title')}: {i18n.level_label(result.level)}",
         result.summary,
-        f"Recommendation: {result.recommendation}",
+        f"{i18n.fmt_label('recommendation')}: {result.recommendation}",
     ]
     if result.reasons:
-        lines.append("Reasons:")
-        lines.extend(f"- {reason}" for reason in result.reasons)
+        lines.append(f"{i18n.fmt_label('reasons')}:")
+        lines.extend(f"  - {reason}" for reason in result.reasons)
     if result.blockers:
-        lines.append("Blockers:")
-        lines.extend(f"- {blocker}" for blocker in result.blockers)
+        lines.append(f"{i18n.fmt_label('blockers')}:")
+        lines.extend(f"  - {blocker}" for blocker in result.blockers)
     if result.signals:
-        lines.append("Signals:")
-        lines.extend(f"- {signal}" for signal in result.signals)
+        translated = [f"{i18n.signal_label(s)} ({s})" for s in result.signals]
+        lines.append(f"{i18n.fmt_label('signals')}:")
+        lines.extend(f"  - {label}" for label in translated)
     if result.safe_create_command:
-        lines.append("Suggested create command:")
+        lines.append(f"{i18n.fmt_label('safe_create_command')}:")
         lines.append(result.safe_create_command)
-    lines.append("Read-only: no handoff packet was created, no session was restarted, and no agent was launched.")
+    lines.append(i18n.fmt_label("footer_read_only"))
     return "\n".join(lines) + "\n"

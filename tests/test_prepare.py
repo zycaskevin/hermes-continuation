@@ -156,11 +156,13 @@ def test_prepare_human_output_is_read_only_and_command_is_conditional(tmp_path):
     prepare_text = format_prepare_preview(prepare)
     advise_text = format_prepare_preview(advise)
 
-    assert "Handoff prepare preview: prepare" in prepare_text
-    assert "Read-only preview" in prepare_text
-    assert "Safe create command" in prepare_text
-    assert "Handoff prepare preview: advise" in advise_text
-    assert "Safe create command" not in advise_text
+    assert "交接包預覽" in prepare_text
+    assert "可準備交接" in prepare_text
+    assert "純讀取模式" in prepare_text
+    assert "安全的交接指令" in prepare_text
+    assert "交接包預覽" in advise_text
+    assert "建議交接" in advise_text
+    assert "安全的交接指令" not in advise_text
 
 
 def test_prepare_cli_json_envelope_is_read_only(tmp_path):

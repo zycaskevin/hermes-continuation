@@ -40,8 +40,9 @@ def test_watch_high_tool_calls_missing_next_advises_without_preview_or_write(tmp
     assert result["recommendation"]["safe_create_command"] is None
     assert result["would_write"] is False
     human = format_watch_result(result)
-    assert "Safe create command" not in human
-    assert "Handoff watch: advise" in human
+    assert "安全的交接指令" not in human
+    assert "交接掃描" in human
+    assert "建議交接" in human
     assert not (tmp_path / ".hermes" / "handoffs").exists()
 
 

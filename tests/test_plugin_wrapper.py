@@ -378,11 +378,12 @@ def test_handoff_command_prepare_human_preview_is_read_only(tmp_path):
         f'prepare repo_path={repo} goal="Command prepare" next_task="Inspect preview" auto_task_state=false verified=unit'
     )
 
-    assert "Handoff prepare preview: prepare" in output
-    assert "Read-only preview" in output
-    assert "Proposed goal: Command prepare" in output
-    assert "Proposed next_task: Inspect preview" in output
-    assert "Safe create command" in output
+    assert "交接包預覽" in output
+    assert "可準備交接" in output
+    assert "純讀取模式" in output
+    assert "目標: Command prepare" in output
+    assert "下一步: Inspect preview" in output
+    assert "安全的交接指令" in output
     assert not (repo / ".hermes" / "handoffs").exists()
 
 
@@ -393,9 +394,11 @@ def test_handoff_command_prepare_missing_next_is_advise_without_safe_create(tmp_
 
     output = plugin.hermes_handoff_command(f'prepare repo_path={repo} goal="Command advise" auto_task_state=false')
 
-    assert "Handoff prepare preview: advise" in output
+    assert "交接包預覽" in output
+    assert "建議交接" in output
+    assert "資訊不完整" in output
     assert "missing_required_prepare_input" in output
-    assert "Safe create command" not in output
+    assert "安全的交接指令" not in output
     assert not (repo / ".hermes" / "handoffs").exists()
 
 

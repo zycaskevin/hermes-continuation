@@ -72,10 +72,11 @@ def test_watch_cli_human_smoke_is_read_only(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert "Handoff watch: advise" in result.stdout
-    assert "Read-only watch" in result.stdout
+    assert "交接掃描" in result.stdout
+    assert "建議交接" in result.stdout
+    assert "純掃描模式" in result.stdout
     assert "watch_tool_calls_threshold" in result.stdout
-    assert "Safe create command" not in result.stdout
+    assert "安全的交接指令" not in result.stdout
     assert not (tmp_path / ".hermes" / "handoffs").exists()
 
 

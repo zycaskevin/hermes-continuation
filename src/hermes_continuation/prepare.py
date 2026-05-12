@@ -1,10 +1,11 @@
-"""Read-only handoff prepare preview assembly."""
+"""Read-only handoff prepare preview assembly. Locale-aware (zh-TW default)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import i18n
 from .doctor import DoctorRecommendation, evaluate_handoff_recommendation
 
 
@@ -20,6 +21,20 @@ def _verification_status(verification: dict[str, list[str]]) -> str:
     if verification.get("verified_gates"):
         return "verified"
     return "not_provided"
+
+
+def _local_verification_status(status: str) -> str:
+    key_map = {
+        "failing": "verification_failing",
+        "not_run": "verification_not_run",
+        "verified": "verification_verified",
+        "not_provided": "verification_not_provided",
+    }
+    return i18n.fmt_label(key_map.get(status, "verification_not_provided"))
+
+
+def _local_safety_status(blocked: bool) -> str:
+    return i18n.fmt_label("safety_blocked" if blocked else "safety_safe")
 
 
 def _preview_from_recommendation(
@@ -81,11 +96,6 @@ def build_prepare_preview(
     """
 
     repo = Path(repo_path).expanduser().resolve()
-    # ``safe_create_command`` is rendered by the doctor evaluator and does not
-    # carry prepare-specific output-dir state. Keep the preview aligned with the
-    # command by always reporting the create command's default output location.
-    # The optional parameter is accepted for backward-compatible callers but is
-    # intentionally ignored.
     _ = output_dir
     resolved_output_dir = repo / ".hermes" / "handoffs"
     result = evaluate_handoff_recommendation(
@@ -109,43 +119,51 @@ def build_prepare_preview(
 
 
 def format_prepare_preview(preview: dict[str, Any]) -> str:
-    """Render a human-readable, secret-safe prepare preview."""
+    """Render a human-readable, secret-safe, locale-aware prepare preview."""
+
+    blocked = preview.get("safety", {}).get("blocked", False)
+    verif_status_raw = preview.get("verification_status", "not_provided")
 
     lines = [
-        f"Handoff prepare preview: {preview.get('level')}",
-        "Read-only preview: would_write=false; no handoff packet was created.",
+        f"{i18n.fmt_label('prepare_title')}: {i18n.level_label(preview.get('level', 'unknown'))}",
+        i18n.fmt_label("read_only"),
         str(preview.get("summary") or ""),
-        f"Recommendation: {preview.get('recommendation')}",
-        f"Output directory if create is run later: {preview.get('output_dir')}",
-        f"Safety status: {preview.get('safety_status')}",
-        f"Verification status: {preview.get('verification_status')}",
+        f"{i18n.fmt_label('recommendation')}: {preview.get('recommendation')}",
     ]
+
+    if not blocked:
+        lines.append(f"{i18n.fmt_label('output_dir')}: {preview.get('output_dir')}")
+    lines.append(f"{i18n.fmt_label('safety_status')}: {_local_safety_status(blocked)}")
+    lines.append(
+        f"{i18n.fmt_label('verification_status')}: {_local_verification_status(verif_status_raw)}"
+    )
 
     proposed_goal = preview.get("proposed_goal")
     proposed_next = preview.get("proposed_next_task")
     if proposed_goal:
-        lines.append(f"Proposed goal: {proposed_goal}")
+        lines.append(f"  {i18n.fmt_label('proposed_goal')}: {proposed_goal}")
     if proposed_next:
-        lines.append(f"Proposed next_task: {proposed_next}")
+        lines.append(f"  {i18n.fmt_label('proposed_next')}: {proposed_next}")
 
     reasons = preview.get("reasons") or []
     if reasons:
-        lines.append("Reasons:")
-        lines.extend(f"- {reason}" for reason in reasons)
+        lines.append(f"{i18n.fmt_label('reasons')}:")
+        lines.extend(f"  - {reason}" for reason in reasons)
 
     blockers = preview.get("blockers") or []
     if blockers:
-        lines.append("Blockers:")
-        lines.extend(f"- {blocker}" for blocker in blockers)
+        lines.append(f"{i18n.fmt_label('blockers')}:")
+        lines.extend(f"  - {blocker}" for blocker in blockers)
 
     signals = preview.get("signals") or []
     if signals:
-        lines.append("Signals:")
-        lines.extend(f"- {signal}" for signal in signals)
+        translated = [f"{i18n.signal_label(s)} ({s})" for s in signals]
+        lines.append(f"{i18n.fmt_label('signals')}:")
+        lines.extend(f"  - {label}" for label in translated)
 
     command = preview.get("safe_create_command")
     if command:
-        lines.append("Safe create command (run only if you want to write a packet):")
+        lines.append(f"{i18n.fmt_label('safe_create_command')}:")
         lines.append(str(command))
 
     return "\n".join(line for line in lines if line) + "\n"
