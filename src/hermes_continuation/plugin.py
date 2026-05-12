@@ -121,7 +121,7 @@ def _parse_key_value_args(text: str) -> dict[str, Any]:
 def _parse_create_command_args(text: str) -> dict[str, Any]:
     payload = text.strip()
     if not payload:
-        raise ValueError("create requires JSON or key=value arguments")
+        return {}
     if payload.startswith("{"):
         return _parse_json_object(payload)
     return _parse_key_value_args(payload)
@@ -130,7 +130,7 @@ def _parse_create_command_args(text: str) -> dict[str, Any]:
 def _parse_prepare_command_args(text: str) -> dict[str, Any]:
     payload = text.strip()
     if not payload:
-        raise ValueError("prepare requires JSON or key=value arguments")
+        return {}
     if payload.startswith("{"):
         return _parse_json_object(payload)
     return _parse_key_value_args(payload)
@@ -139,7 +139,7 @@ def _parse_prepare_command_args(text: str) -> dict[str, Any]:
 def _parse_resume_command_args(text: str) -> dict[str, Any]:
     payload = text.strip()
     if not payload:
-        raise ValueError("resume requires a handoff JSON path")
+        return {}
     if payload.startswith("{"):
         return _parse_json_object(payload)
 
