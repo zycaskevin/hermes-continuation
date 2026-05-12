@@ -147,4 +147,3 @@ def test_evaluate_and_log_config_disabled_still_logs(temp_log_dir):
 
     entries = read_watch_log()
     assert len(entries) >= 1
-
