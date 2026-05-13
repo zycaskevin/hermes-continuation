@@ -18,16 +18,20 @@ from __future__ import annotations
 from typing import Any
 
 # ── Thresholds ──────────────────────────────────────────────────────────────
-# These are intentionally conservative. Turn counts are per-session, so a
-# long conversation naturally accumulates them.
+# These reflect real usage patterns: a single workflow (task delegation +
+# iteration) typically consumes 30-50 messages + tool calls. A full project
+# development spans 3-5+ such workflows.
+#
+# Advise threshold: ~1 full project cycle (100+ messages, 60+ tool calls)
+# Recommend threshold: ~2-3+ project cycles (200+ messages, 120+ tool calls)
 
 # Minimum messages before we even consider advising
-MIN_MESSAGES_FOR_ADVISE = 20
-MIN_TOOL_CALLS_FOR_ADVISE = 10
+MIN_MESSAGES_FOR_ADVISE = 100
+MIN_TOOL_CALLS_FOR_ADVISE = 60
 
 # Recommend threshold: strong signal the conversation has substantial context
-MIN_MESSAGES_FOR_RECOMMEND = 35
-MIN_TOOL_CALLS_FOR_RECOMMEND = 20
+MIN_MESSAGES_FOR_RECOMMEND = 200
+MIN_TOOL_CALLS_FOR_RECOMMEND = 120
 
 
 def evaluate_turn(

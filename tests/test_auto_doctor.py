@@ -5,13 +5,13 @@ from hermes_continuation.auto_doctor import evaluate_turn
 
 
 def test_below_threshold_returns_none():
-    """Less than 20 messages and 10 tool calls → silent (None)."""
+    """Below advise threshold (100msg+60tools) → silent (None)."""
     result = evaluate_turn(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test",
-        message_count=5,
-        tool_call_count=2,
+        message_count=50,
+        tool_call_count=30,
         model="gpt-4",
     )
     assert result is None, "Should be silent below threshold"
@@ -23,8 +23,8 @@ def test_empty_source_returns_none():
         session_id="s1",
         source_platform="",
         source_chat_id="",
-        message_count=40,
-        tool_call_count=25,
+        message_count=200,
+        tool_call_count=120,
         model="gpt-4",
     )
     assert result is None, "Should be silent without source context"
@@ -36,8 +36,8 @@ def test_cli_platform_returns_graceful():
         session_id="s1",
         source_platform="cli",
         source_chat_id="test",
-        message_count=40,
-        tool_call_count=25,
+        message_count=200,
+        tool_call_count=120,
         model="gpt-4",
     )
     assert result is not None
@@ -52,8 +52,8 @@ def test_tui_platform_returns_graceful():
         session_id="s1",
         source_platform="tui",
         source_chat_id="test",
-        message_count=40,
-        tool_call_count=25,
+        message_count=200,
+        tool_call_count=120,
         model="gpt-4",
     )
     assert result is not None
@@ -63,31 +63,31 @@ def test_tui_platform_returns_graceful():
 
 
 def test_advise_threshold_met():
-    """≥20 messages and ≥10 tool calls → advisory level."""
+    """≥100 messages and ≥60 tool calls → advisory level."""
     result = evaluate_turn(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test_chat",
-        message_count=25,
-        tool_call_count=12,
+        message_count=120,
+        tool_call_count=70,
         model="gpt-4",
     )
     assert result is not None
     assert result["level"] == "advise"
     assert result["session_id"] == "s1"
-    assert result["message_count"] == 25
-    assert result["tool_call_count"] == 12
+    assert result["message_count"] == 120
+    assert result["tool_call_count"] == 70
     assert result["model"] == "gpt-4"
 
 
 def test_recommend_threshold_met():
-    """≥35 messages and ≥20 tool calls → recommend level."""
+    """≥200 messages and ≥120 tool calls → recommend level."""
     result = evaluate_turn(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test_chat",
-        message_count=40,
-        tool_call_count=25,
+        message_count=250,
+        tool_call_count=130,
         model="gpt-4",
     )
     assert result is not None
@@ -95,13 +95,13 @@ def test_recommend_threshold_met():
 
 
 def test_advise_at_exact_boundary():
-    """Exactly 20 messages and 10 tool calls → advise."""
+    """Exactly 100 messages and 60 tool calls → advise."""
     result = evaluate_turn(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test_chat",
-        message_count=20,
-        tool_call_count=10,
+        message_count=100,
+        tool_call_count=60,
         model="gpt-4",
     )
     assert result is not None
@@ -109,13 +109,13 @@ def test_advise_at_exact_boundary():
 
 
 def test_recommend_at_exact_boundary():
-    """Exactly 35 messages and 20 tool calls → recommend."""
+    """Exactly 200 messages and 120 tool calls → recommend."""
     result = evaluate_turn(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test_chat",
-        message_count=35,
-        tool_call_count=20,
+        message_count=200,
+        tool_call_count=120,
         model="gpt-4",
     )
     assert result is not None
@@ -128,8 +128,8 @@ def test_high_messages_but_few_tools():
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test_chat",
-        message_count=50,
-        tool_call_count=2,
+        message_count=150,
+        tool_call_count=10,
         model="gpt-4",
     )
     assert result is None, "Should be silent with few tool calls"
@@ -141,26 +141,38 @@ def test_many_tools_but_few_messages():
         session_id="s1",
         source_platform="feishu",
         source_chat_id="test_chat",
-        message_count=5,
-        tool_call_count=30,
+        message_count=30,
+        tool_call_count=90,
         model="gpt-4",
     )
     assert result is None, "Should be silent with few messages"
 
 
+def test_one_workflow_cycle_not_enough():
+    """A single workflow (30-50 msg+tools) should NOT trigger advisory."""
+    result = evaluate_turn(
+        session_id="s1",
+        source_platform="feishu",
+        source_chat_id="test_chat",
+        message_count=45,
+        tool_call_count=40,
+        model="gpt-4",
+    )
+    assert result is None, "Single workflow cycle should be silent"
+
+
 def test_dialogue_context_key_in_result():
-    """Result dict includes dialogue context (may be empty if no real state.db)."""
+    """Result dict includes dialogue context."""
     result = evaluate_turn(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="nonexistent",
-        message_count=35,
-        tool_call_count=20,
+        message_count=200,
+        tool_call_count=120,
         model="gpt-4",
     )
     assert result is not None
     assert "dialogue" in result
-    # dialogue.found will be False since we don't have a real state.db in tests
     assert "found" in result["dialogue"]
 
 
@@ -170,8 +182,8 @@ def test_doctor_result_in_result():
         session_id="s1",
         source_platform="feishu",
         source_chat_id="nonexistent",
-        message_count=35,
-        tool_call_count=20,
+        message_count=200,
+        tool_call_count=120,
         model="gpt-4",
     )
     assert result is not None

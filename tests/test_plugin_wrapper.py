@@ -142,8 +142,8 @@ def test_on_turn_complete_above_threshold():
         session_id="s1",
         source_platform="feishu",
         source_chat_id="nonexistent",
-        message_count=40,
-        tool_call_count=25,
+        message_count=250,
+        tool_call_count=130,
         model="gpt-4",
     )
 
