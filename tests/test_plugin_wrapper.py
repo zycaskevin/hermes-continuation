@@ -138,7 +138,7 @@ def test_on_turn_complete_below_threshold():
 def test_on_turn_complete_above_threshold():
     """Above threshold should complete without exception (graceful)."""
     handler = plugin._on_turn_complete
-    handler(
+    result = handler(
         session_id="s1",
         source_platform="feishu",
         source_chat_id="nonexistent",
@@ -146,6 +146,29 @@ def test_on_turn_complete_above_threshold():
         tool_call_count=130,
         model="gpt-4",
     )
+    assert result is not None
+    assert result["level"] == "recommend"
+    assert result["restart_recommended"] is True
+    assert "handoff_prompt" in result
+
+
+def test_on_turn_complete_accepts_elapsed_and_task_completion():
+    """Hook forwards elapsed/task completeness metrics to auto-doctor."""
+    handler = plugin._on_turn_complete
+    result = handler(
+        session_id="s1",
+        source_platform="feishu",
+        source_chat_id="nonexistent",
+        message_count=120,
+        tool_call_count=70,
+        elapsed_minutes=50,
+        task_completion=80,
+        not_run_gates=["smoke"],
+        model="gpt-4",
+    )
+    assert result is not None
+    assert result["level"] == "recommend"
+    assert result["task_execution"]["completion_percent"] == 80
 
 
 def test_tool_only_context_registers_hook():

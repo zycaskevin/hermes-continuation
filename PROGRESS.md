@@ -1,22 +1,22 @@
 # Hermes Continuation Progress
 
-## Current Status — v0.3.0 + Plugin On-Turn-Complete Hook
+## Current Status — v0.3.1 working branch + Plugin On-Turn-Complete Hook
 
-- **Version:** v0.3.0
+- **Version:** v0.3.0 package metadata; v0.3.1 working branch behavior
 - **Repository:** `/home/zycas/hermes-continuation`
 - **Branch:** `main`
 - **Sync state:** `main` synced to `origin/main`
 - **Last commit:** Task D + CI update + docs
-- **Test status:** 148 tests passed ✅
+- **Test status:** full suite should pass on Windows after the current compatibility fixes
 
 ### New in this update
 
 | Module | Purpose |
 |--------|---------|
-| `auto_doctor.py` | Gateway-side threshold-based handoff advisory (20msg+10tools → advise, 35msg+20tools → recommend) |
+| `auto_doctor.py` | Gateway-side restart/handoff advisory using message count, elapsed time, tool calls, and optional task completeness |
 | `dialogue_context.py` | Read dialogue context from state.db by source_platform + source_chat_id |
 | `doctor.py plugin mode` | Skip git/task state when called from gateway; inject plugin_mode signal |
-| `plugin.py` | Register `on_turn_complete` hook + auto-invoke doctor/advisory |
+| `plugin.py` | Register `on_turn_complete` hook and return the advisory payload to compatible wrappers |
 | `gateway/run.py` | Invoke `on_turn_complete` hook after agent response |
 
 ## v0.3.0 Completed Product Surface
@@ -38,7 +38,7 @@
 | `context_monitor.py` | Auto-collect git changed_files + accept injected session metrics |
 | `auto_watch.py` | Gateway notification gating: thresholds + cooldown + config |
 | `watch_logger.py` | Local JSONL event logger (zero token cost) |
-| `handoff_watch_cron.py` | Standalone cron script with dedup state tracking |
+| External cron/scheduler | Can call `hermes-handoff watch` or plugin watch surfaces; no packaged daemon is started by default |
 
 ### Plugin tools (5)
 
@@ -84,6 +84,21 @@ Design principles:
 - ✅ Approximate counts only (45 min, 80+ calls, 12 files)
 - ✅ Actionable next step (`/handoff prepare`)
 - ✅ Mobile-readable in one glance
+
+### Restart advisory hook
+
+`plugin._on_turn_complete()` now returns a structured payload instead of discarding the evaluation result. Below threshold it remains silent (`None`). Above threshold, wrappers can inspect:
+
+- `restart_recommended`
+- `handoff_recommended`
+- `metrics.message_count`
+- `metrics.tool_call_count`
+- `metrics.elapsed_minutes`
+- `task_execution.completion_percent`
+- `signals` / `reasons`
+- `handoff_prompt`
+
+The hook is still read-only: it does not start a new conversation and does not write `.hermes/handoffs/`.
 
 ### Watch event logger
 

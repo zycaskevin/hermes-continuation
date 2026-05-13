@@ -2,6 +2,15 @@
 
 All notable changes to Hermes Continuation.
 
+## Unreleased
+
+### Added
+- Auto-doctor restart advisory payloads now include `restart_recommended`, `handoff_recommended`, count-based `metrics`, optional `task_execution` completeness, trigger `signals` / `reasons`, a user-facing `notice`, and a pasteable `handoff_prompt` draft.
+
+### Fixed
+- CLI output no longer crashes on Windows consoles that use legacy encodings when localized output contains symbols outside the active code page.
+- Plugin slash-command parsing now preserves Windows path backslashes for key-value arguments and `/handoff resume` paths.
+
 ## [0.3.0] — 2026-05-12
 
 ### Added

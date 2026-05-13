@@ -265,11 +265,13 @@ A plugin tool and gateway slash command for watch are available (`/handoff watch
 
 Auto-watch lets Hermes check whether a handoff is overdue without relying on you to remember `/handoff watch`. It uses the same conservative watch/doctor/prepare path described above: automatic triggers can advise or prepare a preview, but they do **not** write handoff packets. If you want a packet, explicitly run `/handoff prepare` to inspect the preview and then run `create` yourself.
 
+On compatible Gateway runtimes, the plugin `on_turn_complete` hook can return a restart advisory after each assistant response. It considers conversation length, elapsed time, tool-call count, and optional task execution completeness. When it fires, the payload includes `restart_recommended`, `handoff_recommended`, `metrics`, `task_execution`, `signals`, `reasons`, and a pasteable `handoff_prompt` draft. The hook is still read-only: it never starts a new conversation and never writes packet files.
+
 ### Trigger modes
 
 | Mode | How it is triggered | Best for | Notes |
 | --- | --- | --- | --- |
-| **Gateway Wrapper** | The chat gateway calls `evaluate_and_log()` after each Hermes response. | Active Feishu/Hermes conversations. | Uses fresh conversation signals such as elapsed time, tool-call count, and dirty-file count. |
+| **Gateway Wrapper** | The chat gateway calls `evaluate_and_log()` or the plugin `on_turn_complete` hook after each Hermes response. | Active Feishu/Hermes conversations. | Uses fresh conversation signals such as message count, elapsed time, tool-call count, dirty-file count, and optional task completeness. |
 | **Cron** | A scheduler scans configured `watch_repos` on an interval, such as every 30 minutes. | Work you may leave running while away. | Uses repository-local signals only; configure the repo list explicitly. |
 | **Manual** | You run `/handoff watch` or call `hermes_handoff_watch` yourself. | Any time you want an immediate check. | Same read-only advisory behavior as the CLI `hermes-handoff watch`. |
 
