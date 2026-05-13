@@ -380,6 +380,7 @@ def hermes_handoff_doctor(args: dict[str, Any], **_: Any) -> str:
             failing_gates=_as_list(args.get("failing")),
             not_run_gates=_as_list(args.get("not_run")),
             is_plugin_mode=is_plugin_mode,
+            session_id=args.get("session_id"),
             source_platform=source_platform,
             source_chat_id=source_chat_id,
         )
@@ -424,15 +425,16 @@ def hermes_handoff_command(raw_args: str = "", **kwargs: Any) -> str:
     """
     source_platform = kwargs.get("source_platform")
     source_chat_id = kwargs.get("source_chat_id")
+    session_id = kwargs.get("session_id")
 
     def _inject_source_context(args: dict[str, Any]) -> dict[str, Any]:
-        """Inject source_platform and source_chat_id into the parsed args dict
-        so tool handlers (doctor/prepare/watch) can query state.db for
-        dialogue context from the current chat."""
+        """Inject source_platform, source_chat_id, and session_id into args."""
         if source_platform:
             args["source_platform"] = source_platform
         if source_chat_id:
             args["source_chat_id"] = source_chat_id
+        if session_id:
+            args["session_id"] = session_id
         return args
 
     try:

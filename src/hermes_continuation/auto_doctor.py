@@ -69,13 +69,14 @@ def evaluate_turn(
     from .doctor import evaluate_handoff_recommendation
     from .dialogue_context import collect_dialogue_context
 
-    dialogue = collect_dialogue_context(source_platform, source_chat_id)
+    dialogue = collect_dialogue_context(source_platform, source_chat_id, session_id=session_id)
     doctor_result = evaluate_handoff_recommendation(
         repo_path=".",  # Placeholder — auto-detected as plugin mode via source_platform
         goal="",
         next_task="",
         auto_task_state=False,
         explicit_request=False,
+        session_id=session_id,
         source_platform=source_platform,
         source_chat_id=source_chat_id,
     )

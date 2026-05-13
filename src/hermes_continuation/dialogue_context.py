@@ -221,9 +221,14 @@ def collect_dialogue_context(
     source_platform: str | None,
     source_chat_id: str | None,
     *,
+    session_id: str | None = None,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Collect conversation context from state.db for the given source.
+
+    When ``session_id`` is provided, it takes precedence — that specific session
+    is queried directly. Otherwise, the function finds the most recent active
+    session matching the source.
 
     Returns a dict with keys:
         found              — bool, whether a matching session was found
@@ -285,19 +290,34 @@ def collect_dialogue_context(
         }
 
     try:
-        # Try composite source key first ("feishu:oc_..." — future format),
-        # fall back to platform-only ("feishu" — current data format).
-        session = _find_latest_session(conn, source_key)
-        if session is None:
-            session = _find_latest_session(conn, source_platform)
-            if session is not None:
-                source_key_used = source_platform
-            else:
-                source_key_used = source_key
-        else:
-            source_key_used = source_key
+        # If a specific session_id is given, query it directly (most precise)
+        resolved_session_id: str | None = None
+        resolved_msg_count: int = 0
+        resolved_title: str | None = None
 
-        if session is None:
+        if session_id:
+            cursor = conn.execute(
+                "SELECT id, title, message_count FROM sessions WHERE id = ?",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            if row is not None:
+                resolved_session_id = row["id"]
+                resolved_msg_count = row["message_count"] or 0
+                resolved_title = row["title"]
+
+        if resolved_session_id is None:
+            # Fall back to source-based lookup
+            # Try composite key first, then platform-only
+            session = _find_latest_session(conn, source_key)
+            if session is None:
+                session = _find_latest_session(conn, source_platform)
+            if session is not None:
+                resolved_session_id = session["id"]
+                resolved_msg_count = session.get("message_count", 0)
+                resolved_title = session.get("title")
+
+        if resolved_session_id is None:
             return {
                 "found": False,
                 "session_id": None,
@@ -308,17 +328,17 @@ def collect_dialogue_context(
                 "error": f"No session found for source: {source_key}",
             }
 
-        session_id = session["id"]
-        messages = _fetch_recent_messages(conn, session_id)
+        messages = _fetch_recent_messages(conn, resolved_session_id)
 
         conversation_summary = _fold_messages_into_conversation(messages)
         signals = _summarise_conversation(messages)
 
+
         return {
             "found": True,
-            "session_id": session_id,
-            "session_title": session.get("title"),
-            "message_count": session.get("message_count", 0),
+            "session_id": resolved_session_id,
+            "session_title": resolved_title,
+            "message_count": resolved_msg_count,
             "conversation_summary": conversation_summary,
             "signals": signals,
             "error": None,

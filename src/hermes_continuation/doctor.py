@@ -155,6 +155,7 @@ def evaluate_handoff_recommendation(
     in_progress: str = "",
     source_platform: str | None = None,
     source_chat_id: str | None = None,
+    session_id: str | None = None,
     is_plugin_mode: bool | None = None,
 ) -> DoctorRecommendation:
     """Evaluate local signals and return a read-only handoff recommendation.
@@ -287,7 +288,7 @@ def evaluate_handoff_recommendation(
     dialogue_ctx: dict[str, Any] = {}
     if source_platform and source_chat_id:
         dialogue_ctx = collect_dialogue_context(
-            source_platform, source_chat_id
+            source_platform, source_chat_id, session_id=session_id
         )
         if dialogue_ctx.get("found"):
             signals.append("dialogue_context_found")
@@ -433,20 +434,36 @@ def format_recommendation(result: DoctorRecommendation) -> str:
         result.summary,
         f"{i18n.fmt_label('recommendation')}: {result.recommendation}",
     ]
-    repo_path = result.repo.get("path", "")
-    if repo_path:
-        lines.insert(1, f"📁 掃描目錄：`{repo_path}`")
 
-    # ── Dialogue context section ───────────────────────────────────────
-    dc = result.dialogue_context
-    if dc.get("found"):
-        session_title = dc.get("session_title") or "(未命名)"
-        msg_count = dc.get("message_count", 0)
-        lines.append(f"💬 對話上下文：`{session_title}` ({msg_count} 條訊息)")
-        conv_summary = dc.get("conversation_summary", "")
-        if conv_summary:
-            lines.append("")
-            lines.append(conv_summary)
+    # ── Plugin mode: show dialogue context first, no repo path ───────────
+    if "plugin_mode" in result.signals:
+        dc = result.dialogue_context
+        if dc.get("found"):
+            session_title = dc.get("session_title") or "(未命名)"
+            msg_count = dc.get("message_count", 0)
+            lines.insert(1, f"💬 對話上下文：`{session_title}` ({msg_count} 條訊息)")
+            conv_summary = dc.get("conversation_summary", "")
+            if conv_summary:
+                lines.append("")
+                lines.append(conv_summary)
+        else:
+            lines.insert(1, "💬 對話上下文：無法取得（尚無對話記錄）")
+    else:
+        # ── CLI mode: show scanned directory ─────────────────────────────
+        repo_path = result.repo.get("path", "")
+        if repo_path:
+            lines.insert(1, f"📁 掃描目錄：`{repo_path}`")
+
+        # ── Dialogue context (secondary signal) ──────────────────────────
+        dc = result.dialogue_context
+        if dc.get("found"):
+            session_title = dc.get("session_title") or "(未命名)"
+            msg_count = dc.get("message_count", 0)
+            lines.append(f"💬 對話上下文：`{session_title}` ({msg_count} 條訊息)")
+            conv_summary = dc.get("conversation_summary", "")
+            if conv_summary:
+                lines.append("")
+                lines.append(conv_summary)
 
     if result.reasons:
         lines.append(f"{i18n.fmt_label('reasons')}:")
