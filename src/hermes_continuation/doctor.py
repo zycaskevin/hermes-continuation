@@ -155,6 +155,7 @@ def evaluate_handoff_recommendation(
     in_progress: str = "",
     source_platform: str | None = None,
     source_chat_id: str | None = None,
+    is_plugin_mode: bool | None = None,
 ) -> DoctorRecommendation:
     """Evaluate local signals and return a read-only handoff recommendation.
 
@@ -170,11 +171,17 @@ def evaluate_handoff_recommendation(
     In **plugin mode** (no explicit repo_path, source context available), the
     evaluator skips filesystem analysis (git state, task state) and produces a
     conversation-aware recommendation using session metrics and dialogue context.
+
+    Pass ``is_plugin_mode=True`` explicitly when the evaluator is called from a
+    gateway plugin handler with gateway-injected source context. When left as
+    ``None``, the evaluator auto-detects plugin mode from ``source_platform``,
+    ``source_chat_id``, and ``repo_path`` being a default-ish value.
     """
 
-    is_plugin_mode = bool(source_platform and source_chat_id) and (
-        str(repo_path) in (".", "", "None")
-    )
+    if is_plugin_mode is None:
+        is_plugin_mode = bool(source_platform and source_chat_id) and (
+            str(repo_path) in (".", "", "None")
+        )
 
     repo = Path(repo_path).expanduser().resolve() if str(repo_path) not in (".", "", "None") else Path(".").resolve()
     blockers: list[str] = []

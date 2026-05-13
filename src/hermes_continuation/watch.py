@@ -126,8 +126,9 @@ def build_watch_result(
     """
 
     repo = Path(repo_path).expanduser().resolve()
+    is_plugin_mode = bool(source_platform and source_chat_id)
     doctor_result = evaluate_handoff_recommendation(
-        repo,
+        repo if not is_plugin_mode else ".",
         goal=goal,
         next_task=next_task,
         in_progress=in_progress,
@@ -136,6 +137,7 @@ def build_watch_result(
         failing_gates=_list(failing_gates),
         not_run_gates=_list(not_run_gates),
         explicit_request=explicit_request,
+        is_plugin_mode=is_plugin_mode,
         source_platform=source_platform,
         source_chat_id=source_chat_id,
     )

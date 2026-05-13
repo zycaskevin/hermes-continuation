@@ -106,8 +106,9 @@ def build_prepare_preview(
     repo = Path(repo_path).expanduser().resolve()
     _ = output_dir
     resolved_output_dir = repo / ".hermes" / "handoffs"
+    is_plugin_mode = bool(source_platform and source_chat_id)
     result = evaluate_handoff_recommendation(
-        repo,
+        repo if not is_plugin_mode else ".",
         goal=goal,
         next_task=next_task,
         in_progress=in_progress,
@@ -116,6 +117,7 @@ def build_prepare_preview(
         failing_gates=_list(failing_gates),
         not_run_gates=_list(not_run_gates),
         explicit_request=True,
+        is_plugin_mode=is_plugin_mode,
         source_platform=source_platform,
         source_chat_id=source_chat_id,
     )

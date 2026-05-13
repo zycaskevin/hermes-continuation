@@ -366,8 +366,11 @@ def hermes_handoff_doctor(args: dict[str, Any], **_: Any) -> str:
             i18n.set_locale(args["locale"])
         repo_path = Path(str(args.get("repo_path") or ".")).expanduser().resolve()
         auto_task_state = _as_bool(args["auto_task_state"]) if "auto_task_state" in args else True
+        source_platform = args.get("source_platform")
+        source_chat_id = args.get("source_chat_id")
+        is_plugin_mode = bool(source_platform and source_chat_id) and True
         result = evaluate_handoff_recommendation(
-            repo_path,
+            repo_path=repo_path if not is_plugin_mode else ".",
             goal=str(args.get("goal") or "").strip(),
             next_task=str(args.get("next_task") or args.get("next") or "").strip(),
             in_progress=str(args.get("active_task") or args.get("in_progress") or "").strip(),
@@ -376,8 +379,9 @@ def hermes_handoff_doctor(args: dict[str, Any], **_: Any) -> str:
             verified_gates=_as_list(args.get("verified")),
             failing_gates=_as_list(args.get("failing")),
             not_run_gates=_as_list(args.get("not_run")),
-            source_platform=args.get("source_platform"),
-            source_chat_id=args.get("source_chat_id"),
+            is_plugin_mode=is_plugin_mode,
+            source_platform=source_platform,
+            source_chat_id=source_chat_id,
         )
         return _json_response({"success": True, "recommendation": result.to_dict()})
     except (OSError, ValidationError, ValueError) as exc:

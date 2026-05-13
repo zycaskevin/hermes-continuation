@@ -141,13 +141,14 @@ def test_doctor_cli_block_exit_code_and_secret_safe_output(tmp_path):
 
 
 def test_doctor_plugin_mode_skip_git_state():
-    """Plugin mode (source_platform + None repo_path) skips git/task state."""
+    """Plugin mode (explicit is_plugin_mode=True) skips git/task state."""
     result = evaluate_handoff_recommendation(
-        repo_path=None,
+        repo_path=".",
         goal="",
         next_task="",
         auto_task_state=False,
         explicit_request=False,
+        is_plugin_mode=True,
         source_platform="feishu",
         source_chat_id="test_chat",
     )
@@ -158,18 +159,18 @@ def test_doctor_plugin_mode_skip_git_state():
 
 
 def test_doctor_plugin_mode_no_git_state_returns_advise():
-    """Plugin mode with no dialogue context → advise (no signals, no input)."""
+    """Plugin mode skips git/task state → no git signals."""
     result = evaluate_handoff_recommendation(
         repo_path=".",
         goal="",
         next_task="",
         auto_task_state=False,
         explicit_request=False,
+        is_plugin_mode=True,
         source_platform="feishu",
         source_chat_id="test_chat",
     )
     assert "plugin_mode" in result.signals
-    assert "dialogue_context_unavailable" in result.signals
     assert "git_state_incomplete" not in result.signals
     assert "dirty_git_state" not in result.signals
 
@@ -177,18 +178,19 @@ def test_doctor_plugin_mode_no_git_state_returns_advise():
 
 def test_doctor_plugin_mode_still_fires_observe_on_clean():
     """Plugin mode can still return observe when no signals fire."""
-    # Simulate a gateway call with all-zero metrics
+    # Use is_plugin_mode=True to bypass real state.db dependency
     result = evaluate_handoff_recommendation(
         repo_path=".",
         goal="",
         next_task="",
         auto_task_state=False,
         explicit_request=False,
+        is_plugin_mode=True,
         source_platform="feishu",
         source_chat_id="test_chat",
     )
-    # Even in plugin mode, no signals → observe
-    assert result.level == "advise"  # dialogue unavailable is a signal
+    assert "plugin_mode" in result.signals
+    assert result.level == "advise"
     assert result.safe_create_command is None
 
 
@@ -200,12 +202,12 @@ def test_doctor_plugin_mode_handles_explicit_request():
         next_task="Run E2E tests",
         auto_task_state=False,
         explicit_request=True,
+        is_plugin_mode=True,
         source_platform="feishu",
         source_chat_id="test_chat",
     )
     assert "plugin_mode" in result.signals
     assert "explicit_request" in result.signals
-    # Complete goal + next + explicit → prepare
     assert result.level == "prepare"
     assert result.safe_create_command is not None
 

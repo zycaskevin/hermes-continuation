@@ -67,7 +67,7 @@ def evaluate_turn(
 
     dialogue = collect_dialogue_context(source_platform, source_chat_id)
     doctor_result = evaluate_handoff_recommendation(
-        repo_path=".",  # Placeholder — ignored in plugin-mode doctor later
+        repo_path=".",  # Placeholder — auto-detected as plugin mode via source_platform
         goal="",
         next_task="",
         auto_task_state=False,

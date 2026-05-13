@@ -285,7 +285,18 @@ def collect_dialogue_context(
         }
 
     try:
+        # Try composite source key first ("feishu:oc_..." — future format),
+        # fall back to platform-only ("feishu" — current data format).
         session = _find_latest_session(conn, source_key)
+        if session is None:
+            session = _find_latest_session(conn, source_platform)
+            if session is not None:
+                source_key_used = source_platform
+            else:
+                source_key_used = source_key
+        else:
+            source_key_used = source_key
+
         if session is None:
             return {
                 "found": False,
