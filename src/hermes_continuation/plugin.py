@@ -258,6 +258,65 @@ def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]
     return md_path, json_path
 
 
+def _collect_dialogue_for_handoff(
+    source_platform: str, source_chat_id: str, *,
+    session_id: str | None = None,
+) -> dict:
+    """Collect dialogue context from state.db for a handoff."""
+    from .dialogue_context import collect_dialogue_context
+    ctx = collect_dialogue_context(
+        source_platform, source_chat_id, session_id=session_id,
+    )
+    if not ctx.get("found"):
+        return {"error": ctx.get("error", "No dialogue context found")}
+    return ctx
+
+
+def _auto_handoff_from_dialogue(
+    source_platform: str, source_chat_id: str, *,
+    session_id: str | None = None,
+) -> str:
+    """Plugin mode bare /handoff create → auto-generate a pasteable handoff."""
+    ctx = _collect_dialogue_for_handoff(
+        source_platform, source_chat_id, session_id=session_id,
+    )
+    if "error" in ctx:
+        return f"⚠️ 無法取得對話上下文：{ctx['error']}\n\n請手動指定 goal 和 next_task：\n/handoff create goal=\"...\" next_task=\"...\""
+
+    title = ctx.get("session_title") or "未命名對話"
+    msg_count = ctx.get("message_count", 0)
+    signals = ctx.get("signals", {})
+    tool_list = ", ".join(signals.get("tools_used", [])) if signals.get("tools_used") else ""
+    summary = ctx.get("conversation_summary", "")
+    last_user = signals.get("last_user_request", "") if signals else ""
+    last_ai = signals.get("last_ai_response_excerpt", "") if signals else ""
+
+    lines = [
+        f"## 📋 交接摘要 — {title}",
+        "",
+        f"**對話**：{msg_count} 條訊息",
+    ]
+    if tool_list:
+        lines.append(f"**使用工具**：{tool_list}")
+    lines.append("")
+    if last_user:
+        lines.append(f"**最後請求**：{last_user[:200]}")
+        lines.append("")
+    if last_ai:
+        lines.append(f"**最後回應**：{last_ai[:200]}")
+        lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("### 💬 對話記錄")
+    lines.append("")
+    lines.append(summary or "(無詳細記錄)")
+    lines.append("")
+    lines.append(f"*自動產生於 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*")
+    lines.append(f"*來源：{source_platform}:{source_chat_id[:12]}...*")
+
+    return "\n".join(lines)
+
+
 def hermes_handoff_create(args: dict[str, Any], **_: Any) -> str:
     """Create a handoff packet and return a JSON result envelope."""
     try:
@@ -443,9 +502,14 @@ def hermes_handoff_command(raw_args: str = "", **kwargs: Any) -> str:
         if verb == "help":
             return _HANDOFF_HELP
         if verb == "create":
+            if not payload.strip() and source_platform and source_chat_id:
+                # Plugin mode bare /handoff create → auto-generate from dialogue
+                return _auto_handoff_from_dialogue(
+                    source_platform, source_chat_id, session_id=session_id,
+                )
             if not payload.strip():
                 return _HANDOFF_HELP
-            result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(payload)))
+            result = _load_handler_result(hermes_handoff_create(_inject_source_context(_parse_create_command_args(payload))))
             return _format_create_command_result(result)
         if verb == "prepare":
             result = _load_handler_result(hermes_handoff_prepare(_inject_source_context(_parse_prepare_command_args(payload))))
