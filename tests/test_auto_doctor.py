@@ -77,6 +77,12 @@ def test_advise_threshold_met():
     assert result["session_id"] == "s1"
     assert result["message_count"] == 120
     assert result["tool_call_count"] == 70
+    assert result["restart_recommended"] is False
+    assert result["handoff_recommended"] is True
+    assert "conversation_length_threshold" in result["signals"]
+    assert "tool_call_threshold" in result["signals"]
+    assert "handoff_prompt" in result
+    assert "/handoff prepare" in result["notice"]
     assert result["model"] == "gpt-4"
 
 
@@ -92,6 +98,7 @@ def test_recommend_threshold_met():
     )
     assert result is not None
     assert result["level"] == "recommend"
+    assert result["restart_recommended"] is True
 
 
 def test_advise_at_exact_boundary():
@@ -189,3 +196,57 @@ def test_doctor_result_in_result():
     assert result is not None
     assert "doctor" in result
     assert isinstance(result["doctor"], dict)
+
+
+def test_elapsed_time_with_active_task_triggers_advise():
+    """Elapsed time can trigger when there is active task evidence."""
+    result = evaluate_turn(
+        session_id="s1",
+        source_platform="feishu",
+        source_chat_id="test_chat",
+        message_count=20,
+        tool_call_count=10,
+        elapsed_minutes=60,
+        active_task="Finish release checklist",
+        model="gpt-4",
+    )
+    assert result is not None
+    assert result["level"] == "advise"
+    assert "elapsed_time_threshold" in result["signals"]
+    assert "task_follow_up_needed" in result["signals"]
+    assert result["task_execution"]["active_task_present"] is True
+
+
+def test_task_completion_strengthens_restart_recommendation():
+    """Near-complete work plus context risk recommends a restart handoff."""
+    result = evaluate_turn(
+        session_id="s1",
+        source_platform="feishu",
+        source_chat_id="test_chat",
+        message_count=125,
+        tool_call_count=75,
+        elapsed_minutes=50,
+        task_completion=0.8,
+        not_run_gates=["browser smoke"],
+        model="gpt-4",
+    )
+    assert result is not None
+    assert result["level"] == "recommend"
+    assert result["restart_recommended"] is True
+    assert result["task_execution"]["completion_percent"] == 80
+    assert "task_handoff_boundary" in result["signals"]
+    assert "任務完成度約 80%" in result["handoff_prompt"]
+
+
+def test_task_completion_alone_is_silent_to_avoid_noise():
+    """Task completeness alone should not prompt without context risk."""
+    result = evaluate_turn(
+        session_id="s1",
+        source_platform="feishu",
+        source_chat_id="test_chat",
+        message_count=10,
+        tool_call_count=2,
+        task_completion=95,
+        model="gpt-4",
+    )
+    assert result is None

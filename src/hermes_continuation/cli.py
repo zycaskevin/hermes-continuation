@@ -20,6 +20,18 @@ from .validate import ValidationError, validate_packet
 from .watch import build_watch_result, format_watch_result
 
 
+def _configure_stdio() -> None:
+    """Avoid UnicodeEncodeError on Windows consoles using legacy code pages."""
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def _add_repeatable(parser: argparse.ArgumentParser, name: str, help_text: str) -> None:
     parser.add_argument(name, action="append", default=[], help=help_text)
 
@@ -251,6 +263,7 @@ def handle_watch(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not hasattr(args, "func"):

@@ -2,7 +2,7 @@
 
 `hermes-continuation` is a small Hermes-native sidecar/plugin wrapper for creating structured handoff packets during long-running agent work — and from v0.3.0, it can also **proactively remind you** when a handoff is overdue.
 
-The current feature set: `doctor` recommends, `prepare` previews, `watch` performs one-shot read-only advisory checks, `create` writes a local Markdown + JSON handoff packet, and `resume` reads it for a fresh session. **Auto-trigger** (v0.3.0) optionally pushes handoff reminders to Feishu via Gateway wrapper and/or cron jobs. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or run a daemon.
+The current feature set: `doctor` recommends, `prepare` previews, `watch` performs one-shot read-only advisory checks, `create` writes a local Markdown + JSON handoff packet, and `resume` reads it for a fresh session. **Auto-trigger** (v0.3.0) optionally pushes handoff reminders to Feishu via Gateway wrapper and/or cron jobs. The plugin `on_turn_complete` hook can also return a restart recommendation plus a pasteable handoff draft based on conversation length, elapsed time, tool-call count, and task execution completeness. It does **not** modify Hermes core, auto-restart sessions, parse full Hermes transcripts, launch new agents, sync to cloud, provide a dashboard, or run a daemon.
 
 ## Usage guides
 
@@ -112,11 +112,21 @@ Instead of remembering to run `/handoff watch` yourself, Hermes can check automa
 → 回對話中輸入 /handoff prepare 來預覽交接內容
 ```
 
+Gateway runtimes that expose `on_turn_complete` can call the plugin hook after each assistant response. The hook returns `None` while the session is still short, or a structured advisory payload when risk is high:
+
+- `level`: `advise` or `recommend`
+- `restart_recommended`: `true` only when a fresh conversation should be suggested
+- `handoff_prompt`: pasteable Markdown draft for the next session
+- `metrics`: conversation `message_count`, `tool_call_count`, and `elapsed_minutes`
+- `task_execution`: optional completion percent plus pending/failing/not-run work counts
+
+This hook remains advisory. It never restarts the session and never writes packet files; wrappers should ask the user to run `/handoff prepare` before creating a packet or opening a new conversation.
+
 ### Three trigger modes
 
 | Mode | How it works | Best for |
 |------|-------------|----------|
-| **Gateway Wrapper** | After every Hermes response, call `evaluate_and_log()` | Active conversations |
+| **Gateway Wrapper** | After every Hermes response, call `evaluate_and_log()` for count-only notifications, or the plugin `on_turn_complete` hook for restart/handoff advice | Active conversations |
 | **Cron Jobs** | Scan configured repos every 30 min | When you're away |
 | **Manual** `/handoff watch` | You run it yourself | Any time |
 

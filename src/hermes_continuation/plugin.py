@@ -106,9 +106,18 @@ def _parse_json_object(text: str) -> dict[str, Any]:
     return data
 
 
+def _split_shellish(text: str) -> list[str]:
+    """Split slash-command args while preserving Windows path backslashes."""
+
+    lexer = shlex.shlex(text, posix=True)
+    lexer.whitespace_split = True
+    lexer.escape = ""
+    return list(lexer)
+
+
 def _parse_key_value_args(text: str) -> dict[str, Any]:
     args: dict[str, Any] = {}
-    for token in shlex.split(text):
+    for token in _split_shellish(text):
         if "=" not in token:
             raise ValueError(f"expected key=value argument, got: {token}")
         key, value = token.split("=", 1)
@@ -149,7 +158,7 @@ def _parse_resume_command_args(text: str) -> dict[str, Any]:
     if payload.startswith("{"):
         return _parse_json_object(payload)
 
-    tokens = shlex.split(payload)
+    tokens = _split_shellish(payload)
     if not tokens:
         raise ValueError("resume requires a handoff JSON path")
 
@@ -645,7 +654,7 @@ def _on_turn_complete(
     tool_call_count: int = 0,
     model: str = "",
     **kwargs: Any,
-) -> None:
+) -> dict[str, Any] | None:
     """Fire-and-forget auto-doctor evaluation after each agent turn.
 
     This is a non-blocking observer hook: it evaluates session metrics
@@ -655,16 +664,24 @@ def _on_turn_complete(
     try:
         from .auto_doctor import evaluate_turn
 
-        evaluate_turn(
+        return evaluate_turn(
             session_id=session_id,
             source_platform=source_platform,
             source_chat_id=source_chat_id,
             message_count=message_count,
             tool_call_count=tool_call_count,
             model=model,
+            elapsed_minutes=kwargs.get("elapsed_minutes"),
+            task_completion=kwargs.get("task_completion"),
+            completed_tasks=kwargs.get("completed_tasks"),
+            total_tasks=kwargs.get("total_tasks"),
+            pending_tasks=kwargs.get("pending_tasks"),
+            failing_gates=kwargs.get("failing_gates"),
+            not_run_gates=kwargs.get("not_run_gates"),
+            active_task=str(kwargs.get("active_task") or ""),
         )
     except Exception:
-        pass  # Non-fatal — hook failure must never break message flow
+        return None  # Non-fatal — hook failure must never break message flow
 
 
 def register(ctx) -> None:

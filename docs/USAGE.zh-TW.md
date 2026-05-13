@@ -269,11 +269,13 @@ watch 的 plugin tool 與 gateway slash command 已可使用（`/handoff watch .
 
 Auto-watch 讓 Hermes 在你忘記手動輸入 `/handoff watch` 時，也能自動檢查是否已經適合交接。它沿用上面描述的保守 watch/doctor/prepare 路徑：自動觸發可以提出建議或準備預覽，但**不會**寫入 handoff packet。若要真正建立 packet，請先用 `/handoff prepare` 檢查預覽，再由使用者明確執行 `create`。
 
+在相容的 Gateway runtime 上，plugin 的 `on_turn_complete` hook 可以在每次 Hermes 回覆後回傳重啟建議。它會綜合對話長度、已進行時間、工具調用次數，以及 runtime 額外提供的任務完成度。觸發時 payload 會包含 `restart_recommended`、`handoff_recommended`、`metrics`、`task_execution`、`signals`、`reasons` 與可直接貼到新對話的 `handoff_prompt` 草稿。這仍然是 read-only：不會自動開新對話，也不會寫入 packet files。
+
 ### 觸發模式
 
 | 模式 | 如何觸發 | 適合情境 | 補充 |
 | --- | --- | --- | --- |
-| **Gateway Wrapper** | chat gateway 在每次 Hermes 回覆後呼叫 `evaluate_and_log()`。 | 正在進行的 Feishu/Hermes 對話。 | 使用目前對話的 signals，例如 elapsed time、tool-call count、dirty-file count。 |
+| **Gateway Wrapper** | chat gateway 在每次 Hermes 回覆後呼叫 `evaluate_and_log()`，或呼叫 plugin `on_turn_complete` hook。 | 正在進行的 Feishu/Hermes 對話。 | 使用目前對話的 signals，例如 message count、elapsed time、tool-call count、dirty-file count，以及選擇性的 task completeness。 |
 | **Cron** | scheduler 依固定週期掃描設定好的 `watch_repos`，例如每 30 分鐘一次。 | 你離開電腦但工作仍在累積時。 | 只使用 repo-local signals；repo 清單必須明確設定。 |
 | **Manual** | 使用者手動執行 `/handoff watch`，或直接呼叫 `hermes_handoff_watch`。 | 想立即檢查的任何時候。 | 行為與 CLI `hermes-handoff watch` 相同，都是 read-only advisory。 |
 

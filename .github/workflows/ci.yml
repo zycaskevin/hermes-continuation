@@ -37,7 +37,7 @@ jobs:
           python -c "from hermes_continuation.context_monitor import collect_context"
           python -c "from hermes_continuation.auto_watch import should_notify, evaluate_and_log, format_notification"
           python -c "from hermes_continuation.watch_logger import log_watch_event, read_watch_log"
-          python -c "from hermes_continuation.auto_doctor import evaluate_turn"
+          python -c "from hermes_continuation.auto_doctor import evaluate_turn, format_turn_advice"
           python -c "from hermes_continuation.dialogue_context import collect_dialogue_context"
 
       - name: Lightweight secret scan

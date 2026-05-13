@@ -4,6 +4,8 @@ This document defines the Phase 3 design and current public behavior for proacti
 
 Phase 3A/3B/3C/3D now provide read-only advisory and preview surfaces: `hermes-handoff doctor`, `hermes-handoff prepare`, one-shot CLI `hermes-handoff watch`, plugin tool `hermes_handoff_prepare`, and `/handoff prepare ...` on compatible runtimes. Phase 3 still does **not** implement automatic session restart, Hermes core changes, transcript parsing, agent launching, cloud sync, dashboard behavior, background daemon monitoring, plugin/gateway `/handoff watch`, or hidden writes.
 
+The Gateway plugin hook can now return an advisory payload after each completed turn. That payload may recommend a fresh conversation and include a pasteable handoff draft, but it remains advisory: wrappers must ask the user before running `/handoff prepare`, creating a packet, or starting a new conversation.
+
 ## Purpose
 
 Long-running agent work often becomes risky when the context is large, the working tree is dirty, verification is incomplete, or the user is about to leave the session. The goal of this policy is to help Hermes recommend a safe handoff at the right moment without taking hidden actions.
@@ -61,8 +63,11 @@ The implemented one-shot CLI `watch` can combine explicit local signals with the
 
 ### Session and work signals
 
+- Conversation length / message count.
 - Long task duration.
 - High tool-call count.
+- Task execution completeness, when supplied by the runtime or wrapper.
+- Pending, failing, or not-run verification gates, when supplied by the runtime or wrapper.
 - Context compression warning or context-risk metadata when exposed by Hermes.
 - Repeated user references to continuation, fresh sessions, or “continue later.”
 - Explicit user commands such as:
@@ -176,6 +181,8 @@ Plain language: `doctor` recommends; `prepare` previews; `create` writes; `watch
 ## Plugin Wrapper Boundary
 
 The plugin wrapper exposes recommendation/preview behavior without changing Hermes core.
+
+The `on_turn_complete` hook inspects conversation length, elapsed time, tool-call count, and optional task execution completeness. Below threshold it returns `None`; above threshold it returns a structured payload with `level`, `restart_recommended`, `handoff_recommended`, `metrics`, `task_execution`, `reasons`, `signals`, and a `handoff_prompt` draft. The hook must not restart the session, write handoff files, or silently invoke `create`.
 
 Current tools:
 
