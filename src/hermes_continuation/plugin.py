@@ -243,6 +243,7 @@ def _format_doctor_command_result(result: dict[str, Any]) -> str:
         task_state_available=recommendation.get("task_state_available", False),
         redaction_count=recommendation.get("redaction_count", 0),
         safe_create_command=recommendation.get("safe_create_command"),
+        dialogue_context=recommendation.get("dialogue_context", {}),
     )
     return format_recommendation(rec)
 
