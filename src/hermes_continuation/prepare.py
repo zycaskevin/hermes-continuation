@@ -73,6 +73,12 @@ def _preview_from_recommendation(
         "task_state_available": result.task_state_available,
         "safe_create_command": None if blocked else result.safe_create_command,
         "would_write": False,
+        "dialogue_context": {
+            "found": result.dialogue_context.get("found", False),
+            "session_title": result.dialogue_context.get("session_title") if not blocked else None,
+            "message_count": result.dialogue_context.get("message_count", 0),
+            "summary": result.dialogue_context.get("conversation_summary", "") if not blocked else None,
+        },
     }
 
 
@@ -87,6 +93,8 @@ def build_prepare_preview(
     failing_gates: Iterable[str] | None = None,
     not_run_gates: Iterable[str] | None = None,
     output_dir: str | Path | None = None,
+    source_platform: str | None = None,
+    source_chat_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a read-only handoff prepare preview.
 
@@ -108,6 +116,8 @@ def build_prepare_preview(
         failing_gates=_list(failing_gates),
         not_run_gates=_list(not_run_gates),
         explicit_request=True,
+        source_platform=source_platform,
+        source_chat_id=source_chat_id,
     )
     return _preview_from_recommendation(
         result,
@@ -133,6 +143,18 @@ def format_prepare_preview(preview: dict[str, Any]) -> str:
 
     if not blocked:
         lines.append(f"{i18n.fmt_label('output_dir')}: {preview.get('output_dir')}")
+
+    # ── Dialogue context ───────────────────────────────────────────────
+    dc = preview.get("dialogue_context", {})
+    if dc.get("found"):
+        session_title = dc.get("session_title") or "(未命名)"
+        msg_count = dc.get("message_count", 0)
+        lines.append(f"💬 對話上下文：`{session_title}` ({msg_count} 條訊息)")
+        summary = dc.get("summary", "")
+        if summary and not blocked:
+            lines.append("")
+            lines.append(summary)
+
     lines.append(f"{i18n.fmt_label('safety_status')}: {_local_safety_status(blocked)}")
     lines.append(
         f"{i18n.fmt_label('verification_status')}: {_local_verification_status(verif_status_raw)}"

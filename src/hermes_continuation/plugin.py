@@ -51,6 +51,9 @@ Notes:
 - Doctor is read-only; it analyzes local signals and recommends handoff actions.
 - Prepare is read-only; it previews advisory state and never writes packet files.
 - Watch is read-only one-shot advisory evaluation using local signals and thresholds.
+- When invoked from a Gateway chat, doctor/prepare/watch inject
+  source_platform and source_chat_id automatically — the doctor queries
+  state.db for conversation context without needing a repo_path.
 - auto_task_state is opt-in and conservatively reads repo-local docs only.
 - locale=en or locale=zh-TW sets the output language (default: zh-TW).
 - The plugin command is sidecar-only and does not modify Hermes core.
@@ -244,43 +247,6 @@ def _format_doctor_command_result(result: dict[str, Any]) -> str:
     return format_recommendation(rec)
 
 
-def _resolve_chat_repo(source_platform: str | None, source_chat_id: str | None) -> str | None:
-    """Resolve platform+chat_id to a repo path via config, or return None.
-
-    Reads from ``~/.hermes/config.yaml`` under ``plugins.config.hermes-continuation.chat_context``:
-
-    .. code-block:: yaml
-
-        plugins:
-          config:
-            hermes-continuation:
-              chat_context:
-                "gateway:chat_id_1": /path/to/repo-a
-                "feishu:oc_...": /path/to/repo-b
-    """
-    if not source_platform or not source_chat_id:
-        return None
-    if source_platform in ("cli", "tui"):
-        return None  # CLI/TUI sessions have no chat context
-    try:
-        import yaml as _yaml
-        config_path = Path.home() / ".hermes" / "config.yaml"
-        if not config_path.is_file():
-            return None
-        raw = config_path.read_text(encoding="utf-8")
-        config = _yaml.safe_load(raw)
-        if not isinstance(config, dict):
-            return None
-        chat_context = config.get("plugins", {}).get("config", {}).get("hermes-continuation", {}).get("chat_context", {})
-        if not isinstance(chat_context, dict):
-            return None
-        key = f"{source_platform}:{source_chat_id}"
-        fallback_key = source_chat_id  # try bare chat_id too
-        return chat_context.get(key, chat_context.get(fallback_key))
-    except Exception:
-        return None
-
-
 def _write_packet(packet: dict[str, Any], output_dir: Path) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -358,6 +324,8 @@ def hermes_handoff_prepare(args: dict[str, Any], **_: Any) -> str:
             verified_gates=_as_list(args.get("verified")),
             failing_gates=_as_list(args.get("failing")),
             not_run_gates=_as_list(args.get("not_run")),
+            source_platform=args.get("source_platform"),
+            source_chat_id=args.get("source_chat_id"),
         )
         return _json_response({"success": True, "preview": preview})
     except (OSError, ValidationError, ValueError) as exc:
@@ -383,6 +351,8 @@ def hermes_handoff_watch(args: dict[str, Any], **_: Any) -> str:
             verified_gates=_as_list(args.get("verified")),
             failing_gates=_as_list(args.get("failing")),
             not_run_gates=_as_list(args.get("not_run")),
+            source_platform=args.get("source_platform"),
+            source_chat_id=args.get("source_chat_id"),
         )
         return _json_response(result)
     except (OSError, ValidationError, ValueError) as exc:
@@ -406,6 +376,8 @@ def hermes_handoff_doctor(args: dict[str, Any], **_: Any) -> str:
             verified_gates=_as_list(args.get("verified")),
             failing_gates=_as_list(args.get("failing")),
             not_run_gates=_as_list(args.get("not_run")),
+            source_platform=args.get("source_platform"),
+            source_chat_id=args.get("source_chat_id"),
         )
         return _json_response({"success": True, "recommendation": result.to_dict()})
     except (OSError, ValidationError, ValueError) as exc:
@@ -441,29 +413,24 @@ def hermes_handoff_command(raw_args: str = "", **kwargs: Any) -> str:
     place.
 
     When ``kwargs`` contains ``source_platform`` and ``source_chat_id``
-    (injected by Gateway/CLI/TUI dispatchers), the handler resolves a
-    chat-context repo path from config and injects it into the parsed args
-    so subcommands use the correct repo for each chat.
+    (injected by Gateway dispatcher), doctor/prepare/watch subcommands
+    automatically receive them — no chat_context config needed. The doctor
+    queries state.db for conversation context from the current chat, not
+    from a file path.
     """
-    # Resolve chat context only when repo_path is not explicitly provided
     source_platform = kwargs.get("source_platform")
     source_chat_id = kwargs.get("source_chat_id")
-    chat_repo = None
 
-    def _inject_chat_repo(raw: str) -> str:
-        """Prepend ``repo_path=...`` to raw args if chat context is available
-        and the user did not already provide repo_path."""
-        nonlocal chat_repo
-        if not source_platform or not source_chat_id:
-            return raw
-        # Check if user already specified repo_path
-        if "repo_path" in raw or "repo_path=" in raw:
-            return raw
-        if chat_repo is None:
-            chat_repo = _resolve_chat_repo(source_platform, source_chat_id)
-        if chat_repo:
-            return f"repo_path={chat_repo} {raw}"
-        return raw
+    def _inject_source_context(args: dict[str, Any]) -> dict[str, Any]:
+        """Inject source_platform and source_chat_id into the parsed args dict
+        so tool handlers (doctor/prepare/watch) can query state.db for
+        dialogue context from the current chat."""
+        if source_platform:
+            args["source_platform"] = source_platform
+        if source_chat_id:
+            args["source_chat_id"] = source_chat_id
+        return args
+
     try:
         verb, payload = _split_handoff_command(str(raw_args or ""))
         if verb == "help":
@@ -471,19 +438,19 @@ def hermes_handoff_command(raw_args: str = "", **kwargs: Any) -> str:
         if verb == "create":
             if not payload.strip():
                 return _HANDOFF_HELP
-            result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(_inject_chat_repo(payload))))
+            result = _load_handler_result(hermes_handoff_create(_parse_create_command_args(payload)))
             return _format_create_command_result(result)
         if verb == "prepare":
-            result = _load_handler_result(hermes_handoff_prepare(_parse_prepare_command_args(_inject_chat_repo(payload))))
+            result = _load_handler_result(hermes_handoff_prepare(_inject_source_context(_parse_prepare_command_args(payload))))
             return _format_prepare_command_result(result)
         if verb == "resume":
             result = _load_handler_result(hermes_handoff_resume(_parse_resume_command_args(payload)))
             return _format_resume_command_result(result)
         if verb == "watch":
-            result = _load_handler_result(hermes_handoff_watch(_parse_prepare_command_args(_inject_chat_repo(payload))))
+            result = _load_handler_result(hermes_handoff_watch(_inject_source_context(_parse_prepare_command_args(payload))))
             return _format_watch_command_result(result)
         if verb == "doctor":
-            result = _load_handler_result(hermes_handoff_doctor(_parse_prepare_command_args(_inject_chat_repo(payload))))
+            result = _load_handler_result(hermes_handoff_doctor(_inject_source_context(_parse_prepare_command_args(payload))))
             return _format_doctor_command_result(result)
         return f"Unknown handoff subcommand: {verb}\n\n{_HANDOFF_HELP}"
     except (json.JSONDecodeError, ValueError) as exc:
@@ -542,7 +509,7 @@ _PREPARE_SCHEMA: dict[str, Any] = {
             "verified": {"type": "array", "items": {"type": "string"}},
             "failing": {"type": "array", "items": {"type": "string"}},
             "not_run": {"type": "array", "items": {"type": "string"}},
-            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language for human-readable formatting (default: zh-TW)."},
+            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language (default: zh-TW)."},
         },
         "required": [],
     },
@@ -550,16 +517,14 @@ _PREPARE_SCHEMA: dict[str, Any] = {
 
 _WATCH_SCHEMA: dict[str, Any] = {
     "name": WATCH_TOOL,
-    "description": "Run a one-shot read-only handoff watch evaluation using local signals and thresholds. Never writes handoff files.",
+    "description": "Run a one-shot read-only handoff watch evaluation using local signals and thresholds.",
     "parameters": {
         "type": "object",
         "properties": {
             "repo_path": {"type": "string", "description": "Repository path to inspect. Defaults to the current directory."},
             "goal": {"type": "string", "description": "Current goal; missing values degrade to advisory output."},
             "active_task": {"type": "string", "description": "Current in-progress work, if any."},
-            "in_progress": {"type": "string", "description": "Alias for active_task."},
             "next_task": {"type": "string", "description": "Next recommended task."},
-            "next": {"type": "string", "description": "Alias for next_task."},
             "auto_task_state": {"type": "boolean", "description": "Read conservative task-state hints from repo docs. Defaults to true."},
             "tool_calls": {"type": "integer", "description": "Number of tool calls observed (threshold: 5+)."},
             "elapsed_minutes": {"type": "integer", "description": "Elapsed minutes observed (threshold: 30+)."},
@@ -568,7 +533,7 @@ _WATCH_SCHEMA: dict[str, Any] = {
             "verified": {"type": "array", "items": {"type": "string"}},
             "failing": {"type": "array", "items": {"type": "string"}},
             "not_run": {"type": "array", "items": {"type": "string"}},
-            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language for human-readable formatting (default: zh-TW)."},
+            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language (default: zh-TW)."},
         },
         "required": [],
     },
@@ -583,50 +548,89 @@ _DOCTOR_SCHEMA: dict[str, Any] = {
             "repo_path": {"type": "string", "description": "Repository path to inspect. Defaults to the current directory."},
             "goal": {"type": "string", "description": "Current goal; missing values degrade to advisory output."},
             "active_task": {"type": "string", "description": "Current in-progress work, if any."},
-            "in_progress": {"type": "string", "description": "Alias for active_task."},
             "next_task": {"type": "string", "description": "Next recommended task."},
-            "next": {"type": "string", "description": "Alias for next_task."},
             "auto_task_state": {"type": "boolean", "description": "Read conservative task-state hints from repo docs. Defaults to true."},
             "explicit_request": {"type": "boolean", "description": "Whether the user explicitly requested a handoff."},
             "verified": {"type": "array", "items": {"type": "string"}},
             "failing": {"type": "array", "items": {"type": "string"}},
             "not_run": {"type": "array", "items": {"type": "string"}},
-            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language for human-readable formatting (default: zh-TW)."},
+            "locale": {"type": "string", "enum": ["en", "zh-TW"], "description": "Output language (default: zh-TW)."},
         },
         "required": [],
     },
 }
 
 
-def register(ctx: Any) -> None:
-    """Register Hermes continuation tools and optional command."""
+# ── Plugin system registration ──────────────────────────────────────────────
+# The ``register(ctx)`` function is called by Hermes plugin loader.
+# It registers lifecycle hooks (on_turn_complete for auto-doctor).
+
+
+def _on_turn_complete(
+    session_id: str = "",
+    source_platform: str = "",
+    source_chat_id: str = "",
+    message_count: int = 0,
+    tool_call_count: int = 0,
+    model: str = "",
+    **kwargs: Any,
+) -> None:
+    """Fire-and-forget auto-doctor evaluation after each agent turn.
+
+    This is a non-blocking observer hook: it evaluates session metrics
+    against thresholds and runs the doctor silently if warranted, but
+    never raises and never blocks message delivery.
+    """
+    try:
+        from .auto_doctor import evaluate_turn
+
+        evaluate_turn(
+            session_id=session_id,
+            source_platform=source_platform,
+            source_chat_id=source_chat_id,
+            message_count=message_count,
+            tool_call_count=tool_call_count,
+            model=model,
+        )
+    except Exception:
+        pass  # Non-fatal — hook failure must never break message flow
+
+
+def register(ctx) -> None:
+    """Register lifecycle hooks, tools, and slash commands."""
+    # ── Hook registration (optional — older runtimes may lack it) ──────
+    register_hook = getattr(ctx, "register_hook", None)
+    if callable(register_hook):
+        register_hook("on_turn_complete", _on_turn_complete)
+
+    # ── Tool registration ───────────────────────────────────────────────
     register_tool = getattr(ctx, "register_tool", None)
     if not callable(register_tool):
-        raise RuntimeError("Hermes continuation plugin requires callable ctx.register_tool")
+        raise RuntimeError("PluginContext has no register_tool method")
 
     register_tool(
         name=CREATE_TOOL,
         toolset=TOOLSET,
         schema=_CREATE_SCHEMA,
         handler=hermes_handoff_create,
-        description="Create a structured Hermes handoff packet.",
-        emoji="🧾",
+        description="Create a Hermes continuation handoff packet as Markdown and JSON.",
+        emoji="📦",
     )
     register_tool(
         name=RESUME_TOOL,
         toolset=TOOLSET,
         schema=_RESUME_SCHEMA,
         handler=hermes_handoff_resume,
-        description="Extract a fresh-session resume prompt from a handoff packet.",
-        emoji="🔁",
+        description="Extract the resume prompt from a handoff JSON.",
+        emoji="▶️",
     )
     register_tool(
         name=PREPARE_TOOL,
         toolset=TOOLSET,
         schema=_PREPARE_SCHEMA,
         handler=hermes_handoff_prepare,
-        description="Preview a handoff create command without writing files.",
-        emoji="🧭",
+        description="Read-only preview for a Hermes continuation handoff create command.",
+        emoji="🔍",
     )
     register_tool(
         name=WATCH_TOOL,
@@ -645,6 +649,7 @@ def register(ctx: Any) -> None:
         emoji="🩺",
     )
 
+    # ── Slash command registration ──────────────────────────────────────
     register_command = getattr(ctx, "register_command", None)
     if callable(register_command):
         try:

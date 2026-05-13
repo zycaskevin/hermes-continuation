@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable, Literal
 
 from . import i18n
+from .dialogue_context import collect_dialogue_context
 from .git_state import collect_git_state
 from .redaction import RedactionBlocked, redact_obj, redact_text
 from .task_state import collect_task_state
@@ -33,6 +34,7 @@ class DoctorRecommendation:
     verification: dict[str, list[str]] = field(default_factory=dict)
     task_state_available: bool = False
     redaction_count: int = 0
+    dialogue_context: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation."""
@@ -49,6 +51,7 @@ class DoctorRecommendation:
             "verification": {key: list(value) for key, value in self.verification.items()},
             "task_state_available": self.task_state_available,
             "redaction_count": self.redaction_count,
+            "dialogue_context": dict(self.dialogue_context),
         }
 
 
@@ -121,6 +124,7 @@ def _result(
     task_state_available: bool,
     redaction_count: int,
     safe_create_command: str | None = None,
+    dialogue_context: dict[str, Any] | None = None,
 ) -> DoctorRecommendation:
     return DoctorRecommendation(
         level=level,
@@ -134,11 +138,12 @@ def _result(
         verification=verification,
         task_state_available=task_state_available,
         redaction_count=redaction_count,
+        dialogue_context=dialogue_context or {},
     )
 
 
 def evaluate_handoff_recommendation(
-    repo_path: str | Path,
+    repo_path: str | Path = ".",
     *,
     goal: str = "",
     next_task: str = "",
@@ -148,15 +153,30 @@ def evaluate_handoff_recommendation(
     not_run_gates: Iterable[str] | None = None,
     explicit_request: bool = False,
     in_progress: str = "",
+    source_platform: str | None = None,
+    source_chat_id: str | None = None,
 ) -> DoctorRecommendation:
     """Evaluate local signals and return a read-only handoff recommendation.
 
     The evaluator never writes handoff packets, starts sessions, launches agents,
     or parses full transcripts. Missing or incomplete state degrades to
     ``advise`` rather than fabricating a ``prepare`` result.
+
+    When ``source_platform`` and ``source_chat_id`` are provided (from a gateway
+    session), the evaluator queries state.db for recent conversation context
+    from that chat — making the recommendation about *dialogue* content, not just
+    filesystem state.
+
+    In **plugin mode** (no explicit repo_path, source context available), the
+    evaluator skips filesystem analysis (git state, task state) and produces a
+    conversation-aware recommendation using session metrics and dialogue context.
     """
 
-    repo = Path(repo_path).expanduser().resolve()
+    is_plugin_mode = bool(source_platform and source_chat_id) and (
+        str(repo_path) in (".", "", "None")
+    )
+
+    repo = Path(repo_path).expanduser().resolve() if str(repo_path) not in (".", "", "None") else Path(".").resolve()
     blockers: list[str] = []
     reasons: list[str] = []
     signals: list[str] = []
@@ -195,40 +215,26 @@ def evaluate_handoff_recommendation(
             verification=safe_verification,
             task_state_available=False,
             redaction_count=redaction_count,
+            dialogue_context={},
         )
 
-    repo_state = collect_git_state(repo)
-    try:
-        safe_repo, count = _safe_repo(repo_state)
-        redaction_count += count
-    except RedactionBlocked:
-        safe_repo = {"path": "[REDACTED]", "git_available": False, "changed_files": []}
-        blockers.append(i18n.block_reason("private_key_repo"))
-        return _result(
-            "block",
-            recommendation=i18n.rec_text("block_private_key"),
-            reasons=[i18n.block_reason("safety_first")],
-            blockers=blockers,
-            signals=["private_key_detected"],
-            repo=safe_repo,
-            verification=verification,
-            task_state_available=False,
-            redaction_count=redaction_count,
-        )
-
+    # ── Repo & git state (skipped in plugin mode) ──────────────────────
+    safe_repo: dict[str, Any] = {
+        "path": str(repo),
+        "git_available": True,
+        "changed_files": [] if is_plugin_mode else None,
+    }
     task_state: dict[str, Any] | None = None
     task_state_available = False
-    if auto_task_state:
+
+    if not is_plugin_mode:
+        repo_state = collect_git_state(repo)
         try:
-            task_state = collect_task_state(repo, repo_state)
-            redacted_task_state = redact_obj(task_state)
-            task_state = redacted_task_state.value
-            redaction_count += redacted_task_state.redaction_count
-            task_state_available = _task_state_has_evidence(task_state)
-            if task_state_available:
-                signals.append("task_state_available")
+            safe_repo, count = _safe_repo(repo_state)
+            redaction_count += count
         except RedactionBlocked:
-            blockers.append(i18n.block_reason("private_key_docs"))
+            safe_repo = {"path": "[REDACTED]", "git_available": False, "changed_files": []}
+            blockers.append(i18n.block_reason("private_key_repo"))
             return _result(
                 "block",
                 recommendation=i18n.rec_text("block_private_key"),
@@ -239,9 +245,56 @@ def evaluate_handoff_recommendation(
                 verification=verification,
                 task_state_available=False,
                 redaction_count=redaction_count,
+                dialogue_context={},
             )
+
+        if auto_task_state:
+            try:
+                task_state = collect_task_state(repo, repo_state)
+                redacted_task_state = redact_obj(task_state)
+                task_state = redacted_task_state.value
+                redaction_count += redacted_task_state.redaction_count
+                task_state_available = _task_state_has_evidence(task_state)
+                if task_state_available:
+                    signals.append("task_state_available")
+            except RedactionBlocked:
+                blockers.append(i18n.block_reason("private_key_docs"))
+                return _result(
+                    "block",
+                    recommendation=i18n.rec_text("block_private_key"),
+                    reasons=[i18n.block_reason("safety_first")],
+                    blockers=blockers,
+                    signals=["private_key_detected"],
+                    repo=safe_repo,
+                    verification=verification,
+                    task_state_available=False,
+                    redaction_count=redaction_count,
+                    dialogue_context={},
+                )
+        else:
+            signals.append("auto_task_state_disabled")
     else:
-        signals.append("auto_task_state_disabled")
+        signals.append("plugin_mode")
+
+    # ── Dialogue context from state.db ─────────────────────────────────
+    dialogue_ctx: dict[str, Any] = {}
+    if source_platform and source_chat_id:
+        dialogue_ctx = collect_dialogue_context(
+            source_platform, source_chat_id
+        )
+        if dialogue_ctx.get("found"):
+            signals.append("dialogue_context_found")
+            reasons.append(
+                f"對話上下文：{dialogue_ctx['message_count']} 條訊息"
+                f"（來自 {source_platform}:{source_chat_id[:12]}...）"
+            )
+        else:
+            err = dialogue_ctx.get("error")
+            if err:
+                signals.append("dialogue_context_unavailable")
+                reasons.append(f"對話上下文不可用：{err}")
+    else:
+        dialogue_ctx = {}
 
     if redaction_count > 0:
         blockers.append(i18n.block_reason("secrets_redacted"))
@@ -255,6 +308,7 @@ def evaluate_handoff_recommendation(
             verification=verification,
             task_state_available=task_state_available,
             redaction_count=redaction_count,
+            dialogue_context=dialogue_ctx,
         )
 
     if explicit_request:
@@ -315,6 +369,7 @@ def evaluate_handoff_recommendation(
             verification=verification,
             task_state_available=task_state_available,
             redaction_count=redaction_count,
+            dialogue_context=dialogue_ctx,
         )
 
     if explicit_request and not has_prepare_input:
@@ -345,6 +400,7 @@ def evaluate_handoff_recommendation(
             verification=verification,
             task_state_available=task_state_available,
             redaction_count=redaction_count,
+            dialogue_context=dialogue_ctx,
         )
 
     return _result(
@@ -357,6 +413,7 @@ def evaluate_handoff_recommendation(
         verification=verification,
         task_state_available=task_state_available,
         redaction_count=redaction_count,
+        dialogue_context=dialogue_ctx,
     )
 
 
@@ -372,6 +429,18 @@ def format_recommendation(result: DoctorRecommendation) -> str:
     repo_path = result.repo.get("path", "")
     if repo_path:
         lines.insert(1, f"📁 掃描目錄：`{repo_path}`")
+
+    # ── Dialogue context section ───────────────────────────────────────
+    dc = result.dialogue_context
+    if dc.get("found"):
+        session_title = dc.get("session_title") or "(未命名)"
+        msg_count = dc.get("message_count", 0)
+        lines.append(f"💬 對話上下文：`{session_title}` ({msg_count} 條訊息)")
+        conv_summary = dc.get("conversation_summary", "")
+        if conv_summary:
+            lines.append("")
+            lines.append(conv_summary)
+
     if result.reasons:
         lines.append(f"{i18n.fmt_label('reasons')}:")
         lines.extend(f"  - {reason}" for reason in result.reasons)

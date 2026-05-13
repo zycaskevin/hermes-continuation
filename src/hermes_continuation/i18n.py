@@ -56,6 +56,8 @@ _SIGNAL_LABELS: dict[str, dict[LocaleTag, str]] = {
     "private_key_detected": {"en": "private key", "zh-TW": "偵測到私鑰"},
     "sensitive_value_redacted": {"en": "secrets redacted", "zh-TW": "已遮蔽敏感內容"},
     "missing_required_prepare_input": {"en": "incomplete input", "zh-TW": "資訊不完整"},
+    "dialogue_context_found": {"en": "dialogue context loaded", "zh-TW": "已載入對話上下文"},
+    "dialogue_context_unavailable": {"en": "no dialogue context", "zh-TW": "對話上下文不可用"},
 }
 
 # ── reason messages ──

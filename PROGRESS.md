@@ -1,13 +1,23 @@
 # Hermes Continuation Progress
 
-## Current Status — v0.3.0 Task D + Docs Update Complete
+## Current Status — v0.3.0 + Plugin On-Turn-Complete Hook
 
 - **Version:** v0.3.0
 - **Repository:** `/home/zycas/hermes-continuation`
 - **Branch:** `main`
 - **Sync state:** `main` synced to `origin/main`
 - **Last commit:** Task D + CI update + docs
-- **Test status:** 124 tests passed ✅
+- **Test status:** 148 tests passed ✅
+
+### New in this update
+
+| Module | Purpose |
+|--------|---------|
+| `auto_doctor.py` | Gateway-side threshold-based handoff advisory (20msg+10tools → advise, 35msg+20tools → recommend) |
+| `dialogue_context.py` | Read dialogue context from state.db by source_platform + source_chat_id |
+| `doctor.py plugin mode` | Skip git/task state when called from gateway; inject plugin_mode signal |
+| `plugin.py` | Register `on_turn_complete` hook + auto-invoke doctor/advisory |
+| `gateway/run.py` | Invoke `on_turn_complete` hook after agent response |
 
 ## v0.3.0 Completed Product Surface
 

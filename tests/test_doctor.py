@@ -28,7 +28,7 @@ def init_git(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
 
-def test_doctor_observes_clean_low_risk_repo(tmp_path):
+def test_doctor_clean_repo_no_content_returns_observe(tmp_path):
     init_git(tmp_path)
 
     result = evaluate_handoff_recommendation(tmp_path, auto_task_state=False)
@@ -36,6 +36,7 @@ def test_doctor_observes_clean_low_risk_repo(tmp_path):
     assert result.level == "observe"
     assert result.safe_create_command is None
     assert result.blockers == []
+    assert "plugin_mode" not in result.signals
 
 
 def test_doctor_advises_for_dirty_repo_and_missing_prepare_input(tmp_path):
@@ -137,3 +138,82 @@ def test_doctor_cli_block_exit_code_and_secret_safe_output(tmp_path):
     assert "安全阻擋" in result.stdout
     assert dummy_value not in result.stdout
     assert not (tmp_path / ".hermes" / "handoffs").exists()
+
+
+def test_doctor_plugin_mode_skip_git_state():
+    """Plugin mode (source_platform + None repo_path) skips git/task state."""
+    result = evaluate_handoff_recommendation(
+        repo_path=None,
+        goal="",
+        next_task="",
+        auto_task_state=False,
+        explicit_request=False,
+        source_platform="feishu",
+        source_chat_id="test_chat",
+    )
+    assert "plugin_mode" in result.signals
+    assert result.repo.get("changed_files") == []  # Not None → skipped
+    assert not result.task_state_available
+    assert result.level in ("observe", "advise")
+
+
+def test_doctor_plugin_mode_no_git_state_returns_advise():
+    """Plugin mode with no dialogue context → advise (no signals, no input)."""
+    result = evaluate_handoff_recommendation(
+        repo_path=".",
+        goal="",
+        next_task="",
+        auto_task_state=False,
+        explicit_request=False,
+        source_platform="feishu",
+        source_chat_id="test_chat",
+    )
+    assert "plugin_mode" in result.signals
+    assert "dialogue_context_unavailable" in result.signals
+    assert "git_state_incomplete" not in result.signals
+    assert "dirty_git_state" not in result.signals
+
+
+
+def test_doctor_plugin_mode_still_fires_observe_on_clean():
+    """Plugin mode can still return observe when no signals fire."""
+    # Simulate a gateway call with all-zero metrics
+    result = evaluate_handoff_recommendation(
+        repo_path=".",
+        goal="",
+        next_task="",
+        auto_task_state=False,
+        explicit_request=False,
+        source_platform="feishu",
+        source_chat_id="test_chat",
+    )
+    # Even in plugin mode, no signals → observe
+    assert result.level == "advise"  # dialogue unavailable is a signal
+    assert result.safe_create_command is None
+
+
+def test_doctor_plugin_mode_handles_explicit_request():
+    """Plugin mode respects explicit_request despite skipping git."""
+    result = evaluate_handoff_recommendation(
+        repo_path=".",
+        goal="Ship plugin mode",
+        next_task="Run E2E tests",
+        auto_task_state=False,
+        explicit_request=True,
+        source_platform="feishu",
+        source_chat_id="test_chat",
+    )
+    assert "plugin_mode" in result.signals
+    assert "explicit_request" in result.signals
+    # Complete goal + next + explicit → prepare
+    assert result.level == "prepare"
+    assert result.safe_create_command is not None
+
+
+def test_doctor_cli_no_source_platform_not_plugin_mode(tmp_path):
+    """CLI doctor without source_platform is NOT plugin mode."""
+    init_git(tmp_path)
+    result = evaluate_handoff_recommendation(tmp_path, auto_task_state=False)
+    assert "plugin_mode" not in result.signals
+    assert result.level == "observe"
+

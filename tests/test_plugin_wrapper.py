@@ -11,6 +11,7 @@ class FakeCtx:
     def __init__(self):
         self.tools = []
         self.commands = []
+        self.hooks = []
 
     def register_tool(self, **kwargs):
         self.tools.append(kwargs)
@@ -25,6 +26,9 @@ class FakeCtx:
             }
         )
 
+    def register_hook(self, hook_name, callback):
+        self.hooks.append({"hook_name": hook_name, "callback": callback})
+
 
 class ToolOnlyFakeCtx:
     def __init__(self):
@@ -32,6 +36,10 @@ class ToolOnlyFakeCtx:
 
     def register_tool(self, **kwargs):
         self.tools.append(kwargs)
+
+    def register_hook(self, hook_name, callback):
+        self.hooks = getattr(self, "hooks", [])
+        self.hooks.append({"hook_name": hook_name, "callback": callback})
 
 
 class IncompatibleCommandFakeCtx:
@@ -88,6 +96,63 @@ def test_register_adds_create_resume_tools_and_handoff_command():
     assert "create" in command["args_hint"]
     assert "resume" in command["args_hint"]
     assert "prepare" in command["args_hint"]
+
+
+def test_register_hook_adds_on_turn_complete():
+    ctx = FakeCtx()
+    plugin.register(ctx)
+
+    assert len(ctx.hooks) >= 1
+    hook_names = [h["hook_name"] for h in ctx.hooks]
+    assert "on_turn_complete" in hook_names
+
+
+def test_on_turn_complete_handler_importable():
+    """_on_turn_complete can be imported and called without error."""
+    handler = plugin._on_turn_complete
+    assert callable(handler)
+    # Call with minimal args — should not raise
+    handler(
+        session_id="test-session",
+        source_platform="",
+        source_chat_id="",
+        message_count=0,
+        tool_call_count=0,
+        model="",
+    )
+
+
+def test_on_turn_complete_below_threshold():
+    """Below threshold should complete without exception."""
+    handler = plugin._on_turn_complete
+    handler(
+        session_id="s1",
+        source_platform="cli",
+        source_chat_id="test",
+        message_count=5,
+        tool_call_count=2,
+        model="gpt-4",
+    )
+
+
+def test_on_turn_complete_above_threshold():
+    """Above threshold should complete without exception (graceful)."""
+    handler = plugin._on_turn_complete
+    handler(
+        session_id="s1",
+        source_platform="feishu",
+        source_chat_id="nonexistent",
+        message_count=40,
+        tool_call_count=25,
+        model="gpt-4",
+    )
+
+
+def test_tool_only_context_registers_hook():
+    """ToolOnlyFakeCtx also registers the hook (has register_hook)."""
+    ctx = ToolOnlyFakeCtx()
+    plugin.register(ctx)
+    assert len(ctx.hooks) >= 1
 
 
 def test_register_without_command_api_still_registers_tools():

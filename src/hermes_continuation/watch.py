@@ -115,6 +115,8 @@ def build_watch_result(
     failing_gates: Iterable[str] | None = None,
     not_run_gates: Iterable[str] | None = None,
     explicit_request: bool = False,
+    source_platform: str | None = None,
+    source_chat_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a one-shot read-only watch result.
 
@@ -134,6 +136,8 @@ def build_watch_result(
         failing_gates=_list(failing_gates),
         not_run_gates=_list(not_run_gates),
         explicit_request=explicit_request,
+        source_platform=source_platform,
+        source_chat_id=source_chat_id,
     )
     recommendation = doctor_result.to_dict()
 
@@ -172,6 +176,8 @@ def build_watch_result(
             verified_gates=_list(verified_gates),
             failing_gates=_list(failing_gates),
             not_run_gates=_list(not_run_gates),
+            source_platform=source_platform,
+            source_chat_id=source_chat_id,
         )
 
     level = str(recommendation.get("level") or doctor_result.level)
